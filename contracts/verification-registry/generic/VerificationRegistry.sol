@@ -19,12 +19,21 @@ contract VerificationRegistry is IVerificationRegistry, IdentityHandler {
         )
     {}
 
-    string public constant version = "009"; // max value MUST BE 0xffff
+    string public constant version = "010"; // max value MUST BE 0xffff
     mapping(bytes32 => mapping(address => Detail)) private registers;
     bytes32 private constant REVOKE_TYPEHASH =
         keccak256("Revoke(bytes32 digest,address identity)");
     bytes32 private constant ISSUE_TYPEHASH =
         keccak256("Issue(bytes32 digest,uint256 exp,address identity)");
+    bytes32 private constant ONHOLD_TYPEHASH =
+        keccak256(
+            "OnHold(bytes32 digest,address identity,bool onHoldStatus,bytes32 nonce)"
+        );
+
+    bytes32 private constant ONHOLD_WITH_CUSTOM_DELEGATE_TYPE_TYPEHASH =
+        keccak256(
+            "OnHoldByDelegateWithCustomType(bytes32 digest,address identity,bool onHoldStatus,bytes32 nonce,bytes32 delegateType)"
+        );
 
     function issue(bytes32 digest, uint256 exp, address identity) external {
         _validateController(getDidRegistry(identity), _msgSender(), identity);
@@ -89,6 +98,37 @@ contract VerificationRegistry is IVerificationRegistry, IdentityHandler {
         emit NewOnHoldChange(digest, by, onHoldStatus, currentTime);
     }
 
+    function onHoldChangeSigned(
+        bytes32 digest,
+        address identity,
+        bool onHoldStatus,
+        bytes32 nonce,
+        uint8 sigV,
+        bytes32 sigR,
+        bytes32 sigS
+    ) external {
+        bytes memory message = abi.encode(
+            ONHOLD_TYPEHASH,
+            digest,
+            identity,
+            onHoldStatus,
+            nonce
+        );
+        bytes32 structHash = keccak256(message);
+        bytes32 completeHash = _hashTypedDataV4(structHash);
+        address didRegistry = getDidRegistry(identity);
+        checkControllerSignature(
+            didRegistry,
+            identity,
+            sigV,
+            sigR,
+            sigS,
+            completeHash
+        );
+        _onHoldChange(identity, digest, onHoldStatus);
+        _validateAndSetNonce(identity, nonce);
+    }
+
     function _revoke(address by, bytes32 digest) private {
         uint256 exp = block.timestamp;
         Detail storage detail = registers[digest][by];
@@ -139,7 +179,7 @@ contract VerificationRegistry is IVerificationRegistry, IdentityHandler {
         bytes32 digest,
         uint256 exp
     ) external {
-        _validateDelegateWithCustomType(delegateType, identity);
+        _validateDelegateWithCustomType(delegateType, identity, _msgSender());
         _issue(identity, digest, exp);
     }
 
@@ -301,7 +341,7 @@ contract VerificationRegistry is IVerificationRegistry, IdentityHandler {
         address identity,
         bytes32 digest
     ) external {
-        _validateDelegateWithCustomType(delegateType, identity);
+        _validateDelegateWithCustomType(delegateType, identity, _msgSender());
         _revoke(identity, digest);
     }
 
@@ -367,13 +407,144 @@ contract VerificationRegistry is IVerificationRegistry, IdentityHandler {
         _onHoldChange(identity, digest, onHoldStatus);
     }
 
+    function onHoldByDelegateSigned(
+        bytes32 digest,
+        address identity,
+        bool onHoldStatus,
+        bytes32 nonce,
+        uint8 sigV,
+        bytes32 sigR,
+        bytes32 sigS
+    ) external {
+        bytes32 delegateType = _getDefaultDelegateType();
+        _onHoldByDelegateSigned(
+            delegateType,
+            identity,
+            digest,
+            onHoldStatus,
+            nonce,
+            sigV,
+            sigR,
+            sigS
+        );
+    }
+
+    function _onHoldByDelegateSigned(
+        bytes32 delegateType,
+        address identity,
+        bytes32 digest,
+        bool onHoldStatus,
+        bytes32 nonce,
+        uint8 sigV,
+        bytes32 sigR,
+        bytes32 sigS
+    ) private {
+        bytes memory message = abi.encode(
+            ONHOLD_TYPEHASH,
+            digest,
+            identity,
+            onHoldStatus,
+            nonce
+        );
+        __onHoldByDelegateSigned(
+            delegateType,
+            identity,
+            digest,
+            onHoldStatus,
+            message,
+            sigV,
+            sigR,
+            sigS
+        );
+    }
+
+    function _onHoldByDelegateWithCustomTypeSigned(
+        bytes32 delegateType,
+        address identity,
+        bytes32 digest,
+        bool onHoldStatus,
+        bytes32 nonce,
+        uint8 sigV,
+        bytes32 sigR,
+        bytes32 sigS
+    ) private {
+        bytes memory message = abi.encode(
+            ONHOLD_WITH_CUSTOM_DELEGATE_TYPE_TYPEHASH,
+            digest,
+            identity,
+            onHoldStatus,
+            nonce,
+            delegateType
+        );
+        __onHoldByDelegateSigned(
+            delegateType,
+            identity,
+            digest,
+            onHoldStatus,
+            message,
+            sigV,
+            sigR,
+            sigS
+        );
+    }
+
+    function __onHoldByDelegateSigned(
+        bytes32 delegateType,
+        address identity,
+        bytes32 digest,
+        bool onHoldStatus,
+        bytes memory message,
+        uint8 sigV,
+        bytes32 sigR,
+        bytes32 sigS
+    ) private {
+        bytes32 structHash = keccak256(message);
+        bytes32 completeHash = _hashTypedDataV4(structHash);
+
+        bytes32 dt = delegateType; // avoid stack too deep
+
+        address didRegistry = getDidRegistry(identity);
+        checkDelegateSignature(
+            didRegistry,
+            identity,
+            sigV,
+            sigR,
+            sigS,
+            completeHash,
+            dt
+        );
+        _onHoldChange(identity, digest, onHoldStatus);
+    }
+
     function onHoldByDelegateWithCustomType(
         bytes32 delegateType,
         address identity,
         bytes32 digest,
         bool onHoldStatus
     ) external {
-        _validateDelegateWithCustomType(delegateType, identity);
+        _validateDelegateWithCustomType(delegateType, identity, _msgSender());
         _onHoldChange(identity, digest, onHoldStatus);
+    }
+
+    function onHoldByDelegateWithCustomTypeSigned(
+        bytes32 delegateType,
+        address identity,
+        bytes32 digest,
+        bool onHoldStatus,
+        bytes32 nonce,
+        uint8 sigV,
+        bytes32 sigR,
+        bytes32 sigS
+    ) external {
+        _onHoldByDelegateWithCustomTypeSigned(
+            delegateType,
+            identity,
+            digest,
+            onHoldStatus,
+            nonce,
+            sigV,
+            sigR,
+            sigS
+        );
     }
 }
