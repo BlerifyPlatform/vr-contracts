@@ -4,7 +4,6 @@ import { ethers, lacchain, network } from "hardhat";
 import { keccak256, toUtf8Bytes, formatBytes32String } from "ethers/lib/utils";
 import {
   DIDRegistryGM,
-  verificationRegistry,
   VerificationRegistry,
   VerificationRegistry__factory,
   VerificationRegistryGM,
@@ -115,7 +114,7 @@ describe(artifactName, function () {
     await deployVerificationRegistry();
   });
 
-  describe("Verification Registry", () => {
+  describe("General validation", () => {
     it("Should set right values on contract deployment", async function () {
       const Artifact = await ethers.getContractFactory(artifactName, entity1);
       const ci = Artifact.attach(verificationRegistryAddress);
@@ -137,17 +136,6 @@ describe(artifactName, function () {
       const action = verificationRegistry.issue(digest, exp, entity1.address);
       await handleRevert("IET", action);
     });
-    it("Should throw on issuing an already issued digest by the same entity", async () => {
-      const message = "some message digest";
-      const digest = keccak256(toUtf8Bytes(message));
-      const delta = 3600 * 24 * 365;
-      const exp = Math.floor(Date.now() / 1000) + delta;
-      const Artifact = await ethers.getContractFactory(artifactName, entity1);
-      const verificationRegistry = Artifact.attach(verificationRegistryAddress);
-      await issue(verificationRegistryAddress, message, delta, entity1);
-      const action = verificationRegistry.issue(digest, exp, entity1.address);
-      await handleRevert("RAE", action);
-    });
     it("Shoud throw on attempting to send a transaction with an unauthorized controller", async () => {
       const message = "some message digest";
       const digest = keccak256(toUtf8Bytes(message));
@@ -162,12 +150,20 @@ describe(artifactName, function () {
       );
       await handleRevert("IC", action);
     });
-    it("Should return expected values on revoking a previously issued digest", async () => {
-      const message = "some message";
-      const delta = 3600 * 24 * 365;
-      await issue(verificationRegistryAddress, "some message", delta, entity1);
-      await revoke(verificationRegistryAddress, message, entity1);
-    });
+  });
+
+  describe("Did registry customization methods", () => {
+    it("Shoud fail to add a DIDRegistry by signed way when unauthorized", async () => {});
+    it("Shoud add a DIDRegistry by signed way", async () => {});
+    it("Shoud fail to remove a DIDRegistry by signed way when unauthorized", async () => {});
+    it("Shoud remove a DIDRegistry by signed way", async () => {});
+    it("Shoud fail to add a deletegate type by signed way when unauthorized", async () => {});
+    it("Shoud add a delegate type by signed way", async () => {});
+    it("Shoud fail to remove a delegate type by signed way when unauthorized", async () => {});
+    it("Shoud remove a delegate type by signed way", async () => {});
+  });
+
+  describe("On Hold methods", () => {
     it("Should set onHold to true on setting a digest in onHold", async () => {
       await issue();
       await toggletOnHold(true);
@@ -179,6 +175,15 @@ describe(artifactName, function () {
       await toggletOnHold(true);
       await toggletOnHold(false);
     });
+    it("Shoud fail to toggle onHold status by signed way when unauthorized", async () => {});
+    it("Shoud toggle on Hold by signed way", async () => {});
+    it("Shoud fail to toggle onHold status by signed way by delegate when unauthorized", async () => {});
+    it("Shoud toggle on Hold by delegate by signed way", async () => {});
+    it("Shoud fail to toggle onHold status by signed way by delegate with custom type when unauthorized", async () => {});
+    it("Shoud toggle on Hold by delegate by signed way with custom type", async () => {});
+  });
+
+  describe("Issuance methods", () => {
     it("Should issue by delegate", async () => {
       const organization = entity1;
       const delegate = entity2;
@@ -273,6 +278,78 @@ describe(artifactName, function () {
 
       await handleRevert("DTNS", action);
     });
+
+    it("Should throw on issuing an already issued digest by the same entity", async () => {
+      const message = "some message digest";
+      const digest = keccak256(toUtf8Bytes(message));
+      const delta = 3600 * 24 * 365;
+      const exp = Math.floor(Date.now() / 1000) + delta;
+      const Artifact = await ethers.getContractFactory(artifactName, entity1);
+      const verificationRegistry = Artifact.attach(verificationRegistryAddress);
+      await issue(verificationRegistryAddress, message, delta, entity1);
+      const action = verificationRegistry.issue(digest, exp, entity1.address);
+      await handleRevert("RAE", action);
+    });
+    it("Should issue by signed way", async () => {
+      const organization = ethers.Wallet.createRandom();
+      await issueSigned(organization);
+    });
+    it("Should throw on attempting to issue signed with an invalid signature", async () => {
+      const organization = ethers.Wallet.createRandom();
+      const { typeDataHash, digest, exp } = await getTypedDataHashForIssue(
+        organization.address
+      );
+      // sign type data hash
+      const impersonator = ethers.Wallet.createRandom();
+      const signingKey = impersonator._signingKey;
+      const { v, r, s } = signingKey().signDigest(typeDataHash);
+      // 3. Send Signed Transaction
+      const anySender = entity3;
+      const Artifact = await ethers.getContractFactory(artifactName, anySender);
+      const contractInstance = Artifact.attach(verificationRegistryAddress);
+      const action = contractInstance.issueSigned(
+        digest,
+        exp,
+        organization.address,
+        v,
+        r,
+        s
+      );
+      await handleRevert("IC", action);
+    });
+    it("Should issue by delegate by signed way", async () => {
+      const organization = entity1;
+      const delegate = ethers.Wallet.createRandom();
+      await authorizeDelegate(delegate.address, organization);
+      await issueByDelegateSigned(organization, delegate);
+    });
+    it("Should issue by delegate with custom type by signed way", async () => {
+      const customDelegateType =
+        "0x0be0ff6adc81f13f4d66a7dbb4cd4b6018141f5d65f53b245681255a1d2667f5";
+      const organization = entity1;
+      const delegate = ethers.Wallet.createRandom();
+      await setCustomDelegateType(organization, customDelegateType);
+      await authorizeDelegate(
+        delegate.address,
+        organization,
+        defaultDidRegistryInstance.address,
+        customDelegateType
+      );
+      await issueByDelegateWithCustomDelegateTypeSigned(
+        customDelegateType,
+        organization.address,
+        delegate
+      );
+    });
+  });
+
+  describe("Revocation methods", () => {
+    it("Should return expected values on revoking a previously issued digest", async () => {
+      const message = "some message";
+      const delta = 3600 * 24 * 365;
+      await issue(verificationRegistryAddress, "some message", delta, entity1);
+      await revoke(verificationRegistryAddress, message, entity1);
+    });
     it("Should revoke by delegate", async () => {
       const organization = entity1;
       const delegate = entity2;
@@ -304,66 +381,15 @@ describe(artifactName, function () {
         delegate
       );
     });
-    it("Should issue by signed way", async () => {
-      const organization = ethers.Wallet.createRandom();
-      await issueSigned(organization);
-    });
-    it("Should throw on attempting to issue signed with an invalid signature", async () => {
-      const organization = ethers.Wallet.createRandom();
-      const { typeDataHash, digest, exp } = await getTypedDataHashForIssue(
-        organization.address
-      );
-      // sign type data hash
-      const impersonator = ethers.Wallet.createRandom();
-      const signingKey = impersonator._signingKey;
-      const { v, r, s } = signingKey().signDigest(typeDataHash);
-      // 3. Send Signed Transaction
-      const anySender = entity3;
-      const Artifact = await ethers.getContractFactory(artifactName, anySender);
-      const contractInstance = Artifact.attach(verificationRegistryAddress);
-      const action = contractInstance.issueSigned(
-        digest,
-        exp,
-        organization.address,
-        v,
-        r,
-        s
-      );
-      await handleRevert("IC", action);
-    });
     it("Should revoke by signed way", async () => {
       const organization = ethers.Wallet.createRandom();
       await revokeSigned(organization);
-    });
-    it("Should issue by delegate by signed way", async () => {
-      const organization = entity1;
-      const delegate = ethers.Wallet.createRandom();
-      await authorizeDelegate(delegate.address, organization);
-      await issueByDelegateSigned(organization, delegate);
     });
     it("Should revoke by delegate by signed way", async () => {
       const organization = entity1;
       const delegate = ethers.Wallet.createRandom();
       await authorizeDelegate(delegate.address, organization);
       await revokeByDelegateSigned(organization, delegate);
-    });
-    it("Should issue by delegate with custom type by signed way", async () => {
-      const customDelegateType =
-        "0x0be0ff6adc81f13f4d66a7dbb4cd4b6018141f5d65f53b245681255a1d2667f5";
-      const organization = entity1;
-      const delegate = ethers.Wallet.createRandom();
-      await setCustomDelegateType(organization, customDelegateType);
-      await authorizeDelegate(
-        delegate.address,
-        organization,
-        defaultDidRegistryInstance.address,
-        customDelegateType
-      );
-      await issueByDelegateWithCustomDelegateTypeSigned(
-        customDelegateType,
-        organization.address,
-        delegate
-      );
     });
     it("Should revoke by delegate with custom type by signed way", async () => {
       const customDelegateType =
@@ -382,27 +408,6 @@ describe(artifactName, function () {
         organization.address,
         delegate
       );
-    });
-    it("Should update", async () => {
-      const organization = entity1;
-      const Artifact = await ethers.getContractFactory(
-        artifactName,
-        organization
-      );
-      const contractInstance = Artifact.attach(verificationRegistryAddress);
-      const message = "some message";
-      const digest = keccak256(toUtf8Bytes(message));
-      await issue(verificationRegistryAddress, message);
-      const delta = 3600 * 24 * 2;
-      const exp = Math.floor(Date.now() / 1000) + delta;
-      const result = await contractInstance.update(
-        digest,
-        exp,
-        organization.address
-      );
-      await expect(result)
-        .to.emit(contractInstance, "NewUpdate")
-        .withArgs(digest, organization.address, exp);
     });
     it("Should revoke by delegate with custom did registry and custom delegate type", async () => {
       const customDidRegistry = await deployDidRegistry();
@@ -426,6 +431,30 @@ describe(artifactName, function () {
         organization.address,
         delegate
       );
+    });
+  });
+
+  describe("Update methods", () => {
+    it("Should update", async () => {
+      const organization = entity1;
+      const Artifact = await ethers.getContractFactory(
+        artifactName,
+        organization
+      );
+      const contractInstance = Artifact.attach(verificationRegistryAddress);
+      const message = "some message";
+      const digest = keccak256(toUtf8Bytes(message));
+      await issue(verificationRegistryAddress, message);
+      const delta = 3600 * 24 * 2;
+      const exp = Math.floor(Date.now() / 1000) + delta;
+      const result = await contractInstance.update(
+        digest,
+        exp,
+        organization.address
+      );
+      await expect(result)
+        .to.emit(contractInstance, "NewUpdate")
+        .withArgs(digest, organization.address, exp);
     });
   });
 });
