@@ -11,6 +11,18 @@ abstract contract IdentityHandler is IIdentityHandler, Context, EIP712 {
     mapping(address => address) public didRegistries;
     // identity => delegateType => bool
     mapping(address => mapping(bytes32 => bool)) public didDelegateTypes;
+    mapping(address => mapping(bytes32 => bool)) public nonces;
+    bytes32 private constant ADD_DID_REGISTRY_TYPEHASH =
+        keccak256("AddDidRegistry(address didRegistryAddress,bytes32 nonce)");
+
+    bytes32 private constant REMOVE_DID_REGISTRY_TYPEHASH =
+        keccak256("RemoveDidRegistry(bytes32 nonce)");
+
+    bytes32 private constant ADD_DELETEGATE_TYPE_TYPEHASH =
+        keccak256("AddDelegateType(bytes32 delegateType,bytes32 nonce)");
+
+    bytes32 private constant REMOVE_DELETEGATE_TYPE_TYPEHASH =
+        keccak256("RemoveDelegateType(bytes32 delegateType,bytes32 nonce)");
 
     constructor(
         address didRegistry,
@@ -67,20 +79,71 @@ abstract contract IdentityHandler is IIdentityHandler, Context, EIP712 {
     }
 
     function addDidRegistry(address didRegistryAddress) external {
+        _addDidRegistry(didRegistryAddress, _msgSender());
+    }
+
+    function _addDidRegistry(
+        address didRegistryAddress,
+        address actor
+    ) internal {
         // @todo add extcodesize and function selector verification
         require(
             didRegistryAddress != address(0) &&
-                didRegistries[_msgSender()] == address(0),
+                didRegistries[actor] == address(0),
             "IP"
         );
-        didRegistries[_msgSender()] = didRegistryAddress;
-        emit DidRegistryChange(_msgSender(), didRegistryAddress, true);
+        didRegistries[actor] = didRegistryAddress;
+        emit DidRegistryChange(actor, didRegistryAddress, true);
+    }
+
+    function addDidRegistrySigned(
+        address didRegistryAddress,
+        bytes32 nonce,
+        uint8 sigV,
+        bytes32 sigR,
+        bytes32 sigS
+    ) external {
+        bytes memory message = abi.encode(
+            ADD_DID_REGISTRY_TYPEHASH,
+            didRegistryAddress,
+            nonce
+        );
+        bytes32 structHash = keccak256(message);
+        bytes32 completeHash = _hashTypedDataV4(structHash);
+        address actor = ecrecover(completeHash, sigV, sigR, sigS);
+        _validateAndSetNonce(actor, nonce);
+        _addDidRegistry(didRegistryAddress, actor);
+    }
+
+    function _validateAndSetNonce(address actor, bytes32 nonce) internal {
+        require(!nonces[actor][nonce], "NAR");
+        nonces[actor][nonce] = true;
     }
 
     function removeDidRegistry() external {
+        _removeDidRegistry(_msgSender());
+    }
+
+    function _removeDidRegistry(address actor) internal {
         // @todo add extcodesize and function selector verification
-        require(didRegistries[_msgSender()] != address(0), "CDNS");
-        didRegistries[_msgSender()] = address(0);
+        address didRegistryAddress = didRegistries[actor];
+        require(didRegistries[actor] != address(0), "CDNS");
+        didRegistries[actor] = address(0);
+        emit DidRegistryChange(actor, didRegistryAddress, false);
+    }
+
+    function removeDidRegistrySigned(
+        bytes32 nonce,
+        uint8 sigV,
+        bytes32 sigR,
+        bytes32 sigS
+    ) external {
+        bytes memory message = abi.encode(REMOVE_DID_REGISTRY_TYPEHASH, nonce);
+        bytes32 structHash = keccak256(message);
+        bytes32 completeHash = _hashTypedDataV4(structHash);
+        address actor = ecrecover(completeHash, sigV, sigR, sigS);
+        _validateAndSetNonce(actor, nonce);
+        _removeDidRegistry(actor);
     }
 
     function _validateDelegate(
@@ -115,17 +178,13 @@ abstract contract IdentityHandler is IIdentityHandler, Context, EIP712 {
 
     function _validateDelegateWithCustomType(
         bytes32 delegateType,
-        address identity
+        address identity,
+        address delegate
     ) internal view {
         // resolve didRegistry to call
         address registryAddress = getDidRegistry(identity);
         require(isValidDelegateType(identity, delegateType), "DTNS");
-        _validateDelegate(
-            registryAddress,
-            identity,
-            delegateType,
-            _msgSender()
-        );
+        _validateDelegate(registryAddress, identity, delegateType, delegate);
     }
 
     function isValidDelegateType(
@@ -136,13 +195,57 @@ abstract contract IdentityHandler is IIdentityHandler, Context, EIP712 {
     }
 
     function addDelegateType(bytes32 delegateType) external {
-        address by = _msgSender();
+        _addDelegateType(delegateType, _msgSender());
+    }
+
+    function _addDelegateType(bytes32 delegateType, address by) internal {
         _delegateTypeChange(delegateType, by, true);
     }
 
+    function addDelegateTypeSigned(
+        bytes32 delegateType,
+        bytes32 nonce,
+        uint8 sigV,
+        bytes32 sigR,
+        bytes32 sigS
+    ) external {
+        bytes memory message = abi.encode(
+            ADD_DELETEGATE_TYPE_TYPEHASH,
+            delegateType,
+            nonce
+        );
+        bytes32 structHash = keccak256(message);
+        bytes32 completeHash = _hashTypedDataV4(structHash);
+        address actor = ecrecover(completeHash, sigV, sigR, sigS);
+        _validateAndSetNonce(actor, nonce);
+        _addDelegateType(delegateType, actor);
+    }
+
     function removeDelegateType(bytes32 delegateType) external {
-        address by = _msgSender();
+        _removeDelegateType(delegateType, _msgSender());
+    }
+
+    function _removeDelegateType(bytes32 delegateType, address by) internal {
         _delegateTypeChange(delegateType, by, false);
+    }
+
+    function removeDelegateTypeSigned(
+        bytes32 delegateType,
+        bytes32 nonce,
+        uint8 sigV,
+        bytes32 sigR,
+        bytes32 sigS
+    ) external {
+        bytes memory message = abi.encode(
+            REMOVE_DELETEGATE_TYPE_TYPEHASH,
+            delegateType,
+            nonce
+        );
+        bytes32 structHash = keccak256(message);
+        bytes32 completeHash = _hashTypedDataV4(structHash);
+        address actor = ecrecover(completeHash, sigV, sigR, sigS);
+        _validateAndSetNonce(actor, nonce);
+        _removeDelegateType(delegateType, actor);
     }
 
     function _delegateTypeChange(

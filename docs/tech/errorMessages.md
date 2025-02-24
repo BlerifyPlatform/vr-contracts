@@ -16,3 +16,4 @@
 - SCF -> Static Call Failed
 - IOHCS -> Invalid OnHold Change Status
 - RNIBE -> Registry not issued by entity
+- NAR -> Nonce already used

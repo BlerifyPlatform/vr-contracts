@@ -1,5 +1,11 @@
 # Changelog
 
+### 0.1.0
+
+- Fix: Emit event when an entity removes its custom didRegistry
+- Feat: Add methods to set onHold by default delegate and default delegate with custom type using meta transactions with EIP-712
+- Feat: Add methods to add custom DIDRegistry and custom delegate types using meta transactions with EIP-712
+
 ### 0.0.9
 
 - Fix: Use contract versions as part of EIP712 signatures
