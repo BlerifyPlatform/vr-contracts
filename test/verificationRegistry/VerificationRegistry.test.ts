@@ -31,7 +31,8 @@ let verificationRegistryAddress: string;
 let defaultDidRegistryInstance: DIDRegistryGM;
 const genericMessage = "some message";
 const didRegistryArtifactName = "DIDRegistryGM";
-const defaultDelegateType = formatBytes32String("sigAuth"); // bytes32 right padded
+const delegateTypeWithoutPadding = "veriKey";
+const defaultDelegateType = formatBytes32String(delegateTypeWithoutPadding); // bytes32 right padded
 const EIP712ContractName = "VerificationRegistry";
 const unexpectedErrorMessage = "Unexpected failed";
 const contractVersion = "010";
@@ -200,7 +201,9 @@ describe(artifactName, function () {
     });
     it("Shoud add a delegate type by signed way", async () => {
       const organization = ethers.Wallet.createRandom();
-      const customDelegateType = formatBytes32String("sigAuth"); // bytes32 right padded
+      const customDelegateType = formatBytes32String(
+        delegateTypeWithoutPadding
+      ); // bytes32 right padded
       await addDelegateTypeSigned(customDelegateType, organization);
     });
     it("Shoud fail to remove a delegate type by signed way when unauthorized", async () => {
@@ -209,7 +212,9 @@ describe(artifactName, function () {
     });
     it("Shoud remove a delegate type by signed way", async () => {
       const organization = ethers.Wallet.createRandom();
-      const customDelegateType = formatBytes32String("sigAuth"); // bytes32 right padded
+      const customDelegateType = formatBytes32String(
+        delegateTypeWithoutPadding
+      ); // bytes32 right padded
       await addDelegateTypeSigned(customDelegateType, organization);
       await removeDelegateTypeSigned(customDelegateType, organization);
     });
@@ -358,7 +363,9 @@ describe(artifactName, function () {
     it("Shoud toggle on Hold by delegate by signed way with custom type", async () => {
       const message = "someMessage";
       const organization = entity1;
-      const customDelegateType = formatBytes32String("sigAuth"); // bytes32 right padded
+      const customDelegateType = formatBytes32String(
+        delegateTypeWithoutPadding
+      ); // bytes32 right padded
 
       const delegate = ethers.Wallet.createRandom();
       await authorizeDelegate(delegate.address, organization); // authorize delegate in DID registry
@@ -378,7 +385,9 @@ describe(artifactName, function () {
     it("Shoud failt to toggle on Hold by delegate by signed way with custom type when nonce already used", async () => {
       const message = "someMessage";
       const organization = entity1;
-      const customDelegateType = formatBytes32String("sigAuth"); // bytes32 right padded
+      const customDelegateType = formatBytes32String(
+        delegateTypeWithoutPadding
+      ); // bytes32 right padded
 
       const delegate = ethers.Wallet.createRandom();
       await authorizeDelegate(delegate.address, organization); // authorize delegate in DID registry
