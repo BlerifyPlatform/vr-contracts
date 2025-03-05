@@ -27,12 +27,12 @@ contract VerificationRegistry is IVerificationRegistry, IdentityHandler {
         keccak256("Issue(bytes32 digest,uint256 exp,address identity)");
     bytes32 private constant ONHOLD_TYPEHASH =
         keccak256(
-            "OnHold(bytes32 digest,address identity,bool onHoldStatus,bytes32 nonce)"
+            "OnHold(bytes32 digest,address identity,bool onHoldStatus,bytes32 nonce,uint256 intentExpiration)"
         );
 
     bytes32 private constant ONHOLD_WITH_CUSTOM_DELEGATE_TYPE_TYPEHASH =
         keccak256(
-            "OnHoldByDelegateWithCustomType(bytes32 digest,address identity,bool onHoldStatus,bytes32 nonce,bytes32 delegateType)"
+            "OnHoldByDelegateWithCustomType(bytes32 digest,address identity,bool onHoldStatus,bytes32 nonce,uint256 intentExpiration,bytes32 delegateType)"
         );
 
     function issue(bytes32 digest, uint256 exp, address identity) external {
@@ -103,6 +103,7 @@ contract VerificationRegistry is IVerificationRegistry, IdentityHandler {
         address identity,
         bool onHoldStatus,
         bytes32 nonce,
+        uint256 intentExpiration,
         uint8 sigV,
         bytes32 sigR,
         bytes32 sigS
@@ -112,7 +113,8 @@ contract VerificationRegistry is IVerificationRegistry, IdentityHandler {
             digest,
             identity,
             onHoldStatus,
-            nonce
+            nonce,
+            intentExpiration
         );
         bytes32 structHash = keccak256(message);
         bytes32 completeHash = _hashTypedDataV4(structHash);
@@ -126,7 +128,7 @@ contract VerificationRegistry is IVerificationRegistry, IdentityHandler {
             completeHash
         );
         _onHoldChange(identity, digest, onHoldStatus);
-        _validateAndSetNonce(identity, nonce);
+        _validateAndSetNonce(identity, nonce, intentExpiration);
     }
 
     function _revoke(address by, bytes32 digest) private {
@@ -412,6 +414,7 @@ contract VerificationRegistry is IVerificationRegistry, IdentityHandler {
         address identity,
         bool onHoldStatus,
         bytes32 nonce,
+        uint256 intentExpiration,
         uint8 sigV,
         bytes32 sigR,
         bytes32 sigS
@@ -423,6 +426,7 @@ contract VerificationRegistry is IVerificationRegistry, IdentityHandler {
             digest,
             onHoldStatus,
             nonce,
+            intentExpiration,
             sigV,
             sigR,
             sigS
@@ -435,6 +439,7 @@ contract VerificationRegistry is IVerificationRegistry, IdentityHandler {
         bytes32 digest,
         bool onHoldStatus,
         bytes32 nonce,
+        uint256 intentExpiration,
         uint8 sigV,
         bytes32 sigR,
         bytes32 sigS
@@ -444,7 +449,8 @@ contract VerificationRegistry is IVerificationRegistry, IdentityHandler {
             digest,
             identity,
             onHoldStatus,
-            nonce
+            nonce,
+            intentExpiration
         );
         __onHoldByDelegateSigned(
             delegateType,
@@ -452,6 +458,8 @@ contract VerificationRegistry is IVerificationRegistry, IdentityHandler {
             digest,
             onHoldStatus,
             message,
+            nonce,
+            intentExpiration,
             sigV,
             sigR,
             sigS
@@ -464,6 +472,7 @@ contract VerificationRegistry is IVerificationRegistry, IdentityHandler {
         bytes32 digest,
         bool onHoldStatus,
         bytes32 nonce,
+        uint256 intentExpiration,
         uint8 sigV,
         bytes32 sigR,
         bytes32 sigS
@@ -474,6 +483,7 @@ contract VerificationRegistry is IVerificationRegistry, IdentityHandler {
             identity,
             onHoldStatus,
             nonce,
+            intentExpiration,
             delegateType
         );
         __onHoldByDelegateSigned(
@@ -482,6 +492,8 @@ contract VerificationRegistry is IVerificationRegistry, IdentityHandler {
             digest,
             onHoldStatus,
             message,
+            nonce,
+            intentExpiration,
             sigV,
             sigR,
             sigS
@@ -494,6 +506,8 @@ contract VerificationRegistry is IVerificationRegistry, IdentityHandler {
         bytes32 digest,
         bool onHoldStatus,
         bytes memory message,
+        bytes32 nonce,
+        uint256 intentExpiration,
         uint8 sigV,
         bytes32 sigR,
         bytes32 sigS
@@ -514,6 +528,7 @@ contract VerificationRegistry is IVerificationRegistry, IdentityHandler {
             dt
         );
         _onHoldChange(identity, digest, onHoldStatus);
+        _validateAndSetNonce(identity, nonce, intentExpiration);
     }
 
     function onHoldByDelegateWithCustomType(
@@ -532,6 +547,7 @@ contract VerificationRegistry is IVerificationRegistry, IdentityHandler {
         bytes32 digest,
         bool onHoldStatus,
         bytes32 nonce,
+        uint256 intentExpiration,
         uint8 sigV,
         bytes32 sigR,
         bytes32 sigS
@@ -542,6 +558,7 @@ contract VerificationRegistry is IVerificationRegistry, IdentityHandler {
             digest,
             onHoldStatus,
             nonce,
+            intentExpiration,
             sigV,
             sigR,
             sigS

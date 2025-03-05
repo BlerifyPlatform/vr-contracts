@@ -4,7 +4,6 @@ import { ethers, lacchain, network } from "hardhat";
 import { keccak256, toUtf8Bytes, formatBytes32String } from "ethers/lib/utils";
 import {
   DIDRegistryGM,
-  verificationRegistry,
   VerificationRegistry,
   VerificationRegistry__factory,
   VerificationRegistryGM,
@@ -19,7 +18,6 @@ import { DIDRegistryGM__factory } from "../../typechain-types/factories/utils/id
 import { SignerWithAddress } from "@nomiclabs/hardhat-ethers/signers";
 import { GasModelSignerModified } from "../../GasModelModified";
 import { randomUUID } from "crypto";
-import { identity } from "../../typechain-types/external";
 
 const artifactName = "VerificationRegistryGM";
 let deployer: SignerWithAddress | GasModelSignerModified;
@@ -31,11 +29,12 @@ let verificationRegistryAddress: string;
 let defaultDidRegistryInstance: DIDRegistryGM;
 const genericMessage = "some message";
 const didRegistryArtifactName = "DIDRegistryGM";
-const delegateTypeWithoutPadding = "veriKey";
+const delegateTypeWithoutPadding = "sigAuth"; //"veriKey";
 const defaultDelegateType = formatBytes32String(delegateTypeWithoutPadding); // bytes32 right padded
 const EIP712ContractName = "VerificationRegistry";
 const unexpectedErrorMessage = "Unexpected failed";
 const contractVersion = "010";
+const intentExpirationDeltaTime = 120;
 describe(artifactName, function () {
   async function deployDidRegistry() {
     let Artifact: DIDRegistry__factory | DIDRegistryGM__factory;
@@ -167,9 +166,13 @@ describe(artifactName, function () {
       const { didRegistry } = await deployDidRegistry();
       const organization = ethers.Wallet.createRandom();
 
+      const intentExpiration =
+        Math.floor(Date.now() / 1000) + intentExpirationDeltaTime;
+
       const { v, r, s, nonce } = await addDidRegistrySigned(
         didRegistry.address,
-        organization
+        organization,
+        intentExpiration
       );
 
       // re send
@@ -179,6 +182,7 @@ describe(artifactName, function () {
       const action = contractInstance.addDidRegistrySigned(
         didRegistry.address,
         nonce,
+        intentExpiration,
         v,
         r,
         s
@@ -238,11 +242,14 @@ describe(artifactName, function () {
       const status = true;
       const digest = keccak256(toUtf8Bytes(message));
       const nonce = keccak256(toUtf8Bytes(randomUUID()));
+      const intentExpiration =
+        Math.floor(Date.now() / 1000) + intentExpirationDeltaTime;
       const { typeDataHash } = await getTypedDataHashForOnHoldType(
         digest,
         organization.address,
         status,
-        nonce
+        nonce,
+        intentExpiration
       );
       // sign type data hash
       const attacker = ethers.Wallet.createRandom();
@@ -258,6 +265,7 @@ describe(artifactName, function () {
         organization.address,
         status,
         nonce,
+        intentExpiration,
         v,
         r,
         s
@@ -293,11 +301,14 @@ describe(artifactName, function () {
       const attacker = ethers.Wallet.createRandom();
       const status = true;
       const digest = keccak256(toUtf8Bytes(message));
+      const intentExpiration =
+        Math.floor(Date.now() / 1000) + intentExpirationDeltaTime;
       const { typeDataHash } = await getTypedDataHashForOnHoldType(
         digest,
         organizationAddress,
         status,
-        nonce
+        nonce,
+        intentExpiration
       );
       // sign type data hash
       const signingKey = attacker._signingKey;
@@ -312,6 +323,7 @@ describe(artifactName, function () {
         organizationAddress,
         status,
         nonce,
+        intentExpiration,
         v,
         r,
         s
@@ -335,11 +347,14 @@ describe(artifactName, function () {
       const organizationAddress = organization.address;
 
       const digest = keccak256(toUtf8Bytes(message));
+      const intentExpiration =
+        Math.floor(Date.now() / 1000) + intentExpirationDeltaTime;
       const { typeDataHash } = await getTypedDataHashForOnHoldType(
         digest,
         organizationAddress,
         status,
-        nonce
+        nonce,
+        intentExpiration
       );
       // sign type data hash
       const signingKey = delegate._signingKey;
@@ -354,6 +369,7 @@ describe(artifactName, function () {
         organizationAddress,
         status,
         nonce,
+        intentExpiration,
         v,
         r,
         s
@@ -405,14 +421,20 @@ describe(artifactName, function () {
 
       const organizationAddress = organization.address;
       const digest = keccak256(toUtf8Bytes(message));
+      const intentExpiration =
+        Math.floor(Date.now() / 1000) + intentExpirationDeltaTime;
       const { typeDataHash } =
         await getTypedDataHashForOnHoldWithCustomTypeOfDelegate_Type(
           digest,
           organizationAddress,
           status,
           nonce,
+          intentExpiration,
           customDelegateType
         );
+      // sign type data hash
+      const signingKey = delegate._signingKey;
+      let sig = signingKey().signDigest(typeDataHash);
       // 3. Send Signed Transaction
       const anySender = entity3;
       const Artifact = await ethers.getContractFactory(artifactName, anySender);
@@ -424,11 +446,60 @@ describe(artifactName, function () {
         digest,
         status,
         nonce,
-        v,
-        r,
-        s
+        intentExpiration,
+        sig.v,
+        sig.r,
+        sig.s
       );
       await handleRevert("IOHCS", action);
+    });
+    it("Shoud failt to toggle on Hold by delegate by signed way with custom type when intent expiration is less than current time", async () => {
+      const message = "someMessage";
+      const organization = entity1;
+      const customDelegateType = formatBytes32String(
+        delegateTypeWithoutPadding
+      ); // bytes32 right padded
+
+      const delegate = ethers.Wallet.createRandom();
+      await authorizeDelegate(delegate.address, organization); // authorize delegate in DID registry
+      await setCustomDelegateType(organization, customDelegateType); // set a delagate type in verification registry
+
+      const status = true;
+
+      const nonce = keccak256(toUtf8Bytes(randomUUID()));
+
+      const organizationAddress = organization.address;
+      const digest = keccak256(toUtf8Bytes(message));
+      const intentExpiration = Math.floor(Date.now() / 1000) - 120; // intentionally setting a timestamp less than current time
+      const { typeDataHash } =
+        await getTypedDataHashForOnHoldWithCustomTypeOfDelegate_Type(
+          digest,
+          organizationAddress,
+          status,
+          nonce,
+          intentExpiration,
+          customDelegateType
+        );
+      // sign type data hash
+      const signingKey = delegate._signingKey;
+      let sig = signingKey().signDigest(typeDataHash);
+      // 3. Send Signed Transaction
+      const anySender = entity3;
+      const Artifact = await ethers.getContractFactory(artifactName, anySender);
+      const contractInstance = Artifact.attach(verificationRegistryAddress);
+
+      const action = contractInstance.onHoldByDelegateWithCustomTypeSigned(
+        customDelegateType,
+        organizationAddress,
+        digest,
+        status,
+        nonce,
+        intentExpiration,
+        sig.v,
+        sig.r,
+        sig.s
+      );
+      await handleRevert("TIE", action);
     });
   });
 
@@ -1219,12 +1290,15 @@ async function getTypedDataHashForRevocation(
 async function getTypedDataHashForAddDidRegistry(
   didRegistryAddressCandidate: string,
   nonce: string,
+  intentExpiration: number,
   contractName = EIP712ContractName,
   chainId = network.config.chainId,
   version = contractVersion
 ): Promise<{ typeDataHash: string }> {
   const ADD_DID_REGISTRY_TYPEHASH = keccak256(
-    toUtf8Bytes("AddDidRegistry(address didRegistryAddress,bytes32 nonce)")
+    toUtf8Bytes(
+      "AddDidRegistry(address didRegistryAddress,bytes32 nonce,uint256 intentExpiration)"
+    )
   );
 
   // 0. Build digest
@@ -1232,8 +1306,13 @@ async function getTypedDataHashForAddDidRegistry(
 
   // 1. Build struct data hash
   const encodedMessage = defaultAbiCoder.encode(
-    ["bytes32", "address", "bytes32"],
-    [ADD_DID_REGISTRY_TYPEHASH, didRegistryAddressCandidate, nonce]
+    ["bytes32", "address", "bytes32", "uint256"],
+    [
+      ADD_DID_REGISTRY_TYPEHASH,
+      didRegistryAddressCandidate,
+      nonce,
+      intentExpiration,
+    ]
   );
   const structHash = keccak256(arrayify(encodedMessage)); // OK
 
@@ -1266,16 +1345,19 @@ async function getTypedDataHashForAddDidRegistry(
 
 async function getTypedDataHashForAddDelegateType(
   delegateType: string,
-  nonce: string
+  nonce: string,
+  intentExpiration: number
 ): Promise<{ typeDataHash: string }> {
   const ADD_DELEGATE_TYPEHASH = keccak256(
-    toUtf8Bytes("AddDelegateType(bytes32 delegateType,bytes32 nonce)")
+    toUtf8Bytes(
+      "AddDelegateType(bytes32 delegateType,bytes32 nonce,uint256 intentExpiration)"
+    )
   );
 
   // 1. Build struct data hash
   const encodedMessage = defaultAbiCoder.encode(
-    ["bytes32", "bytes32", "bytes32"],
-    [ADD_DELEGATE_TYPEHASH, delegateType, nonce]
+    ["bytes32", "bytes32", "bytes32", "uint256"],
+    [ADD_DELEGATE_TYPEHASH, delegateType, nonce, intentExpiration]
   );
 
   const typeDataHash = await getTypedDataHash(encodedMessage);
@@ -1286,17 +1368,18 @@ async function getTypedDataHashForOnHoldType(
   digest: string,
   identity: string,
   onHoldStatus: boolean,
-  nonce: string
+  nonce: string,
+  intentExpiration: number
 ): Promise<{ typeDataHash: string }> {
   const ONHOLD_TYPEHASH = keccak256(
     toUtf8Bytes(
-      "OnHold(bytes32 digest,address identity,bool onHoldStatus,bytes32 nonce)"
+      "OnHold(bytes32 digest,address identity,bool onHoldStatus,bytes32 nonce,uint256 intentExpiration)"
     )
   );
   // 1. Build struct data hash
   const encodedMessage = defaultAbiCoder.encode(
-    ["bytes32", "bytes32", "address", "bool", "bytes32"],
-    [ONHOLD_TYPEHASH, digest, identity, onHoldStatus, nonce]
+    ["bytes32", "bytes32", "address", "bool", "bytes32", "uint256"],
+    [ONHOLD_TYPEHASH, digest, identity, onHoldStatus, nonce, intentExpiration]
   );
 
   const typeDataHash = await getTypedDataHash(encodedMessage);
@@ -1308,22 +1391,24 @@ async function getTypedDataHashForOnHoldWithCustomTypeOfDelegate_Type(
   identity: string,
   onHoldStatus: boolean,
   nonce: string,
+  intentExpiration: number,
   delegateType: string
 ): Promise<{ typeDataHash: string }> {
   const ONHOLD_WITH_CUSTOM_DELEGATE_TYPE_TYPEHASH = keccak256(
     toUtf8Bytes(
-      "OnHoldByDelegateWithCustomType(bytes32 digest,address identity,bool onHoldStatus,bytes32 nonce,bytes32 delegateType)"
+      "OnHoldByDelegateWithCustomType(bytes32 digest,address identity,bool onHoldStatus,bytes32 nonce,uint256 intentExpiration,bytes32 delegateType)"
     )
   );
   // 1. Build struct data hash
   const encodedMessage = defaultAbiCoder.encode(
-    ["bytes32", "bytes32", "address", "bool", "bytes32", "bytes32"],
+    ["bytes32", "bytes32", "address", "bool", "bytes32", "uint256", "bytes32"],
     [
       ONHOLD_WITH_CUSTOM_DELEGATE_TYPE_TYPEHASH,
       digest,
       identity,
       onHoldStatus,
       nonce,
+      intentExpiration,
       delegateType,
     ]
   );
@@ -1334,16 +1419,19 @@ async function getTypedDataHashForOnHoldWithCustomTypeOfDelegate_Type(
 
 async function getTypedDataHashForRemoveDelegateType(
   delegateType: string,
-  nonce: string
+  nonce: string,
+  intentExpiration: number
 ): Promise<{ typeDataHash: string }> {
   const REMOVE_DELEGATE_TYPEHASH = keccak256(
-    toUtf8Bytes("RemoveDelegateType(bytes32 delegateType,bytes32 nonce)")
+    toUtf8Bytes(
+      "RemoveDelegateType(bytes32 delegateType,bytes32 nonce,uint256 intentExpiration)"
+    )
   );
 
   // 1. Build struct data hash
   const encodedMessage = defaultAbiCoder.encode(
-    ["bytes32", "bytes32", "bytes32"],
-    [REMOVE_DELEGATE_TYPEHASH, delegateType, nonce]
+    ["bytes32", "bytes32", "bytes32", "uint256"],
+    [REMOVE_DELEGATE_TYPEHASH, delegateType, nonce, intentExpiration]
   );
 
   const typeDataHash = await getTypedDataHash(encodedMessage);
@@ -1374,12 +1462,13 @@ async function getTypedDataHash(
 
 async function getTypedDataHashForRemoveDidRegistry(
   nonce: string,
+  intentExpiration: number,
   contractName = EIP712ContractName,
   chainId = network.config.chainId,
   version = contractVersion
 ): Promise<{ typeDataHash: string }> {
   const REMOVE_DID_REGISTRY_TYPEHASH = keccak256(
-    toUtf8Bytes("RemoveDidRegistry(bytes32 nonce)")
+    toUtf8Bytes("RemoveDidRegistry(bytes32 nonce,uint256 intentExpiration)")
   );
 
   // 0. Build digest
@@ -1387,8 +1476,8 @@ async function getTypedDataHashForRemoveDidRegistry(
 
   // 1. Build struct data hash
   const encodedMessage = defaultAbiCoder.encode(
-    ["bytes32", "bytes32"],
-    [REMOVE_DID_REGISTRY_TYPEHASH, nonce]
+    ["bytes32", "bytes32", "uint256"],
+    [REMOVE_DID_REGISTRY_TYPEHASH, nonce, intentExpiration]
   );
   const structHash = keccak256(arrayify(encodedMessage)); // OK
 
@@ -1445,13 +1534,15 @@ async function getDomainSeparator(
 
 async function addDidRegistrySigned(
   didRegistryAddress: string,
-  organization: Wallet
+  organization: Wallet,
+  intentExpiration = Math.floor(Date.now() / 1000) + intentExpirationDeltaTime
 ) {
   const randonNonceSeed = randomUUID();
   const nonce = keccak256(toUtf8Bytes(randonNonceSeed));
   const { typeDataHash } = await getTypedDataHashForAddDidRegistry(
     didRegistryAddress,
-    nonce
+    nonce,
+    intentExpiration
   );
   // sign type data hash
   const signingKey = organization._signingKey;
@@ -1464,6 +1555,7 @@ async function addDidRegistrySigned(
   const result = await contractInstance.addDidRegistrySigned(
     didRegistryAddress,
     nonce,
+    intentExpiration,
     v,
     r,
     s
@@ -1477,11 +1569,15 @@ async function addDidRegistrySigned(
 
 async function removeDidRegistrySigned(
   didRegistryAddress: string,
-  organization: Wallet
+  organization: Wallet,
+  intentExpiration = Math.floor(Date.now() / 1000) + intentExpirationDeltaTime
 ) {
   const randonNonceSeed = randomUUID();
   const nonce = keccak256(toUtf8Bytes(randonNonceSeed));
-  const { typeDataHash } = await getTypedDataHashForRemoveDidRegistry(nonce);
+  const { typeDataHash } = await getTypedDataHashForRemoveDidRegistry(
+    nonce,
+    intentExpiration
+  );
   // sign type data hash
   const signingKey = organization._signingKey;
   const { v, r, s } = signingKey().signDigest(typeDataHash);
@@ -1490,7 +1586,13 @@ async function removeDidRegistrySigned(
   const Artifact = await ethers.getContractFactory(artifactName, anySender);
   const contractInstance = Artifact.attach(verificationRegistryAddress);
 
-  const result = await contractInstance.removeDidRegistrySigned(nonce, v, r, s);
+  const result = await contractInstance.removeDidRegistrySigned(
+    nonce,
+    intentExpiration,
+    v,
+    r,
+    s
+  );
   await result.wait();
   await expect(result)
     .to.emit(contractInstance, "DidRegistryChange")
@@ -1500,13 +1602,15 @@ async function removeDidRegistrySigned(
 
 async function addDelegateTypeSigned(
   customDelegateType: string,
-  organization: Wallet
+  organization: Wallet,
+  intentExpiration = Math.floor(Date.now() / 1000) + intentExpirationDeltaTime
 ) {
   const randonNonceSeed = randomUUID();
   const nonce = keccak256(toUtf8Bytes(randonNonceSeed));
   const { typeDataHash } = await getTypedDataHashForAddDelegateType(
     customDelegateType,
-    nonce
+    nonce,
+    intentExpiration
   );
   // sign type data hash
   const signingKey = organization._signingKey;
@@ -1519,6 +1623,7 @@ async function addDelegateTypeSigned(
   const result = await contractInstance.addDelegateTypeSigned(
     customDelegateType,
     nonce,
+    intentExpiration,
     v,
     r,
     s
@@ -1533,13 +1638,15 @@ async function addDelegateTypeSigned(
 
 async function removeDelegateTypeSigned(
   customDelegateType: string,
-  organization: Wallet
+  organization: Wallet,
+  intentExpiration = Math.floor(Date.now() / 1000) + intentExpirationDeltaTime
 ) {
   const randonNonceSeed = randomUUID();
   const nonce = keccak256(toUtf8Bytes(randonNonceSeed));
   const { typeDataHash } = await getTypedDataHashForRemoveDelegateType(
     customDelegateType,
-    nonce
+    nonce,
+    intentExpiration
   );
   // sign type data hash
   const signingKey = organization._signingKey;
@@ -1552,6 +1659,7 @@ async function removeDelegateTypeSigned(
   const result = await contractInstance.removeDelegateTypeSigned(
     customDelegateType,
     nonce,
+    intentExpiration,
     v,
     r,
     s
@@ -1568,14 +1676,16 @@ async function addOnHoldSigned(
   message = genericMessage,
   organization: Wallet,
   status: boolean,
-  nonce = keccak256(toUtf8Bytes(randomUUID()))
+  nonce = keccak256(toUtf8Bytes(randomUUID())),
+  intentExpiration = Math.floor(Date.now() / 1000) + intentExpirationDeltaTime
 ) {
   const digest = keccak256(toUtf8Bytes(message));
   const { typeDataHash } = await getTypedDataHashForOnHoldType(
     digest,
     organization.address,
     status,
-    nonce
+    nonce,
+    intentExpiration
   );
   // sign type data hash
   const signingKey = organization._signingKey;
@@ -1590,6 +1700,7 @@ async function addOnHoldSigned(
     organization.address,
     status,
     nonce,
+    intentExpiration,
     v,
     r,
     s
@@ -1610,14 +1721,16 @@ async function addOnHoldByDelegateSigned(
   organizationAddress: string,
   status: boolean,
   delegate: Wallet,
-  nonce = keccak256(toUtf8Bytes(randomUUID()))
+  nonce = keccak256(toUtf8Bytes(randomUUID())),
+  intentExpiration = Math.floor(Date.now() / 1000) + intentExpirationDeltaTime
 ) {
   const digest = keccak256(toUtf8Bytes(message));
   const { typeDataHash } = await getTypedDataHashForOnHoldType(
     digest,
     organizationAddress,
     status,
-    nonce
+    nonce,
+    intentExpiration
   );
   // sign type data hash
   const signingKey = delegate._signingKey;
@@ -1632,6 +1745,7 @@ async function addOnHoldByDelegateSigned(
     organizationAddress,
     status,
     nonce,
+    intentExpiration,
     v,
     r,
     s
@@ -1653,7 +1767,8 @@ async function addOnHoldByDelegateWithCustomTypeSigned(
   organizationAddress: string,
   status: boolean,
   delegate: Wallet,
-  nonce = keccak256(toUtf8Bytes(randomUUID()))
+  nonce = keccak256(toUtf8Bytes(randomUUID())),
+  intentExpiration = Math.floor(Date.now() / 1000) + intentExpirationDeltaTime
 ) {
   const digest = keccak256(toUtf8Bytes(message));
   const { typeDataHash } =
@@ -1662,6 +1777,7 @@ async function addOnHoldByDelegateWithCustomTypeSigned(
       organizationAddress,
       status,
       nonce,
+      intentExpiration,
       customDelegateType
     );
   // sign type data hash
@@ -1678,6 +1794,7 @@ async function addOnHoldByDelegateWithCustomTypeSigned(
     digest,
     status,
     nonce,
+    intentExpiration,
     v,
     r,
     s

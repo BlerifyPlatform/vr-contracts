@@ -13,16 +13,22 @@ abstract contract IdentityHandler is IIdentityHandler, Context, EIP712 {
     mapping(address => mapping(bytes32 => bool)) public didDelegateTypes;
     mapping(address => mapping(bytes32 => bool)) public nonces;
     bytes32 private constant ADD_DID_REGISTRY_TYPEHASH =
-        keccak256("AddDidRegistry(address didRegistryAddress,bytes32 nonce)");
+        keccak256(
+            "AddDidRegistry(address didRegistryAddress,bytes32 nonce,uint256 intentExpiration)"
+        );
 
     bytes32 private constant REMOVE_DID_REGISTRY_TYPEHASH =
-        keccak256("RemoveDidRegistry(bytes32 nonce)");
+        keccak256("RemoveDidRegistry(bytes32 nonce,uint256 intentExpiration)");
 
     bytes32 private constant ADD_DELETEGATE_TYPE_TYPEHASH =
-        keccak256("AddDelegateType(bytes32 delegateType,bytes32 nonce)");
+        keccak256(
+            "AddDelegateType(bytes32 delegateType,bytes32 nonce,uint256 intentExpiration)"
+        );
 
     bytes32 private constant REMOVE_DELETEGATE_TYPE_TYPEHASH =
-        keccak256("RemoveDelegateType(bytes32 delegateType,bytes32 nonce)");
+        keccak256(
+            "RemoveDelegateType(bytes32 delegateType,bytes32 nonce,uint256 intentExpiration)"
+        );
 
     constructor(
         address didRegistry,
@@ -99,6 +105,7 @@ abstract contract IdentityHandler is IIdentityHandler, Context, EIP712 {
     function addDidRegistrySigned(
         address didRegistryAddress,
         bytes32 nonce,
+        uint256 intentExpiration,
         uint8 sigV,
         bytes32 sigR,
         bytes32 sigS
@@ -106,16 +113,22 @@ abstract contract IdentityHandler is IIdentityHandler, Context, EIP712 {
         bytes memory message = abi.encode(
             ADD_DID_REGISTRY_TYPEHASH,
             didRegistryAddress,
-            nonce
+            nonce,
+            intentExpiration
         );
         bytes32 structHash = keccak256(message);
         bytes32 completeHash = _hashTypedDataV4(structHash);
         address actor = ecrecover(completeHash, sigV, sigR, sigS);
-        _validateAndSetNonce(actor, nonce);
+        _validateAndSetNonce(actor, nonce, intentExpiration);
         _addDidRegistry(didRegistryAddress, actor);
     }
 
-    function _validateAndSetNonce(address actor, bytes32 nonce) internal {
+    function _validateAndSetNonce(
+        address actor,
+        bytes32 nonce,
+        uint256 intentExpiration
+    ) internal {
+        require(intentExpiration >= block.timestamp, "TIE");
         require(!nonces[actor][nonce], "NAR");
         nonces[actor][nonce] = true;
     }
@@ -134,15 +147,20 @@ abstract contract IdentityHandler is IIdentityHandler, Context, EIP712 {
 
     function removeDidRegistrySigned(
         bytes32 nonce,
+        uint256 intentExpiration,
         uint8 sigV,
         bytes32 sigR,
         bytes32 sigS
     ) external {
-        bytes memory message = abi.encode(REMOVE_DID_REGISTRY_TYPEHASH, nonce);
+        bytes memory message = abi.encode(
+            REMOVE_DID_REGISTRY_TYPEHASH,
+            nonce,
+            intentExpiration
+        );
         bytes32 structHash = keccak256(message);
         bytes32 completeHash = _hashTypedDataV4(structHash);
         address actor = ecrecover(completeHash, sigV, sigR, sigS);
-        _validateAndSetNonce(actor, nonce);
+        _validateAndSetNonce(actor, nonce, intentExpiration);
         _removeDidRegistry(actor);
     }
 
@@ -205,6 +223,7 @@ abstract contract IdentityHandler is IIdentityHandler, Context, EIP712 {
     function addDelegateTypeSigned(
         bytes32 delegateType,
         bytes32 nonce,
+        uint256 intentExpiration,
         uint8 sigV,
         bytes32 sigR,
         bytes32 sigS
@@ -212,12 +231,13 @@ abstract contract IdentityHandler is IIdentityHandler, Context, EIP712 {
         bytes memory message = abi.encode(
             ADD_DELETEGATE_TYPE_TYPEHASH,
             delegateType,
-            nonce
+            nonce,
+            intentExpiration
         );
         bytes32 structHash = keccak256(message);
         bytes32 completeHash = _hashTypedDataV4(structHash);
         address actor = ecrecover(completeHash, sigV, sigR, sigS);
-        _validateAndSetNonce(actor, nonce);
+        _validateAndSetNonce(actor, nonce, intentExpiration);
         _addDelegateType(delegateType, actor);
     }
 
@@ -232,6 +252,7 @@ abstract contract IdentityHandler is IIdentityHandler, Context, EIP712 {
     function removeDelegateTypeSigned(
         bytes32 delegateType,
         bytes32 nonce,
+        uint256 intentExpiration,
         uint8 sigV,
         bytes32 sigR,
         bytes32 sigS
@@ -239,12 +260,13 @@ abstract contract IdentityHandler is IIdentityHandler, Context, EIP712 {
         bytes memory message = abi.encode(
             REMOVE_DELETEGATE_TYPE_TYPEHASH,
             delegateType,
-            nonce
+            nonce,
+            intentExpiration
         );
         bytes32 structHash = keccak256(message);
         bytes32 completeHash = _hashTypedDataV4(structHash);
         address actor = ecrecover(completeHash, sigV, sigR, sigS);
-        _validateAndSetNonce(actor, nonce);
+        _validateAndSetNonce(actor, nonce, intentExpiration);
         _removeDelegateType(delegateType, actor);
     }
 
