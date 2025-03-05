@@ -3,6 +3,7 @@
 ## Common Error Messages
 
 - IET -> Invalid Expiration Time
+- TIE -> Transaction Intent has Expired
 
 ## Credential Registry
 

@@ -24,7 +24,7 @@ const config: HardhatUserConfig = {
       gas: 0x989680,
       gasPrice: 0,
       nodeAddress: "0xad730de8c4bfc3d845f7ce851bcf2ea17c049585", // address the node you are connecting with.
-      expiration: 1736394529, // expiration time which is at least greater than current 10 digits unix timestamp
+      expiration: 1936394529, // expiration time which is at least greater than current 10 digits unix timestamp
       privateKeys: [
         // use the signers you are going to use for your project
         "0x8f2a55949038a9610f50fb23b5883af3b4ecb3c3bb792cbcefbd1542c692be63",
