@@ -10,7 +10,7 @@ import {
   VerificationRegistryGM,
   VerificationRegistryGM__factory,
 } from "../../typechain-types";
-import { Wallet } from "ethers";
+import { BigNumber, Wallet } from "ethers";
 import { defaultAbiCoder } from "ethers/lib/utils";
 import { arrayify } from "@ethersproject/bytes";
 import { DIDRegistry } from "../../typechain-types/utils/identity/didRegistry";
@@ -237,7 +237,7 @@ describe(artifactName, function () {
       const message = "someMessage";
       const status = true;
       const digest = keccak256(toUtf8Bytes(message));
-      const nonce = keccak256(toUtf8Bytes(randomUUID()));
+      const nonce = 0;
       const { typeDataHash } = await getTypedDataHashForOnHoldType(
         digest,
         organization.address,
@@ -267,7 +267,8 @@ describe(artifactName, function () {
     it("Shoud toggle on Hold by signed way", async () => {
       const message = "someMessage";
       const organization = ethers.Wallet.createRandom();
-      await addOnHoldSigned(message, organization, true);
+      const nonce = 0;
+      await addOnHoldSigned(message, organization, true, nonce);
     });
     it("Shoud fail to toggle onHold status by signed way by delegate when unauthorized", async () => {});
     it("Shoud toggle on Hold by delegate by signed way", async () => {
@@ -287,9 +288,7 @@ describe(artifactName, function () {
       const message = "someMessage";
       const organization = entity1;
       const organizationAddress = organization.address;
-      const randonNonceSeed = randomUUID();
-      const nonce = keccak256(toUtf8Bytes(randonNonceSeed));
-
+      const nonce = 0;
       const attacker = ethers.Wallet.createRandom();
       const status = true;
       const digest = keccak256(toUtf8Bytes(message));
@@ -358,7 +357,7 @@ describe(artifactName, function () {
         r,
         s
       );
-      await handleRevert("IOHCS", action);
+      await handleRevert("IN", action);
     });
     it("Shoud toggle on Hold by delegate by signed way with custom type", async () => {
       const message = "someMessage";
@@ -405,14 +404,6 @@ describe(artifactName, function () {
 
       const organizationAddress = organization.address;
       const digest = keccak256(toUtf8Bytes(message));
-      const { typeDataHash } =
-        await getTypedDataHashForOnHoldWithCustomTypeOfDelegate_Type(
-          digest,
-          organizationAddress,
-          status,
-          nonce,
-          customDelegateType
-        );
       // 3. Send Signed Transaction
       const anySender = entity3;
       const Artifact = await ethers.getContractFactory(artifactName, anySender);
@@ -428,7 +419,7 @@ describe(artifactName, function () {
         r,
         s
       );
-      await handleRevert("IOHCS", action);
+      await handleRevert("IN", action);
     });
   });
 
@@ -1299,16 +1290,16 @@ async function getTypedDataHashForOnHoldType(
   digest: string,
   identity: string,
   onHoldStatus: boolean,
-  nonce: string
+  nonce: number | BigNumber
 ): Promise<{ typeDataHash: string }> {
   const ONHOLD_TYPEHASH = keccak256(
     toUtf8Bytes(
-      "OnHold(bytes32 digest,address identity,bool onHoldStatus,bytes32 nonce)"
+      "OnHold(bytes32 digest,address identity,bool onHoldStatus,uint64 nonce)"
     )
   );
   // 1. Build struct data hash
   const encodedMessage = defaultAbiCoder.encode(
-    ["bytes32", "bytes32", "address", "bool", "bytes32"],
+    ["bytes32", "bytes32", "address", "bool", "uint64"],
     [ONHOLD_TYPEHASH, digest, identity, onHoldStatus, nonce]
   );
 
@@ -1320,17 +1311,17 @@ async function getTypedDataHashForOnHoldWithCustomTypeOfDelegate_Type(
   digest: string,
   identity: string,
   onHoldStatus: boolean,
-  nonce: string,
+  nonce: number | BigNumber,
   delegateType: string
 ): Promise<{ typeDataHash: string }> {
   const ONHOLD_WITH_CUSTOM_DELEGATE_TYPE_TYPEHASH = keccak256(
     toUtf8Bytes(
-      "OnHoldByDelegateWithCustomType(bytes32 digest,address identity,bool onHoldStatus,bytes32 nonce,bytes32 delegateType)"
+      "OnHoldByDelegateWithCustomType(bytes32 digest,address identity,bool onHoldStatus,uint64 nonce,bytes32 delegateType)"
     )
   );
   // 1. Build struct data hash
   const encodedMessage = defaultAbiCoder.encode(
-    ["bytes32", "bytes32", "address", "bool", "bytes32", "bytes32"],
+    ["bytes32", "bytes32", "address", "bool", "uint64", "bytes32"],
     [
       ONHOLD_WITH_CUSTOM_DELEGATE_TYPE_TYPEHASH,
       digest,
@@ -1581,7 +1572,7 @@ async function addOnHoldSigned(
   message = genericMessage,
   organization: Wallet,
   status: boolean,
-  nonce = keccak256(toUtf8Bytes(randomUUID()))
+  nonce: number
 ) {
   const digest = keccak256(toUtf8Bytes(message));
   const { typeDataHash } = await getTypedDataHashForOnHoldType(
@@ -1614,7 +1605,7 @@ async function addOnHoldSigned(
     .withArgs(digest, organization.address, status, anyValue);
   const q = await contractInstance.getDetails(organization.address, digest);
   expect(q.onHold).to.equal(status);
-
+  expect(q.nonce).to.equal(nonce + 1);
   return { v, r, s, nonce };
 }
 
@@ -1622,10 +1613,17 @@ async function addOnHoldByDelegateSigned(
   message = genericMessage,
   organizationAddress: string,
   status: boolean,
-  delegate: Wallet,
-  nonce = keccak256(toUtf8Bytes(randomUUID()))
+  delegate: Wallet
 ) {
   const digest = keccak256(toUtf8Bytes(message));
+  const anySender = entity3;
+  const Artifact = await ethers.getContractFactory(artifactName, anySender);
+  const contractInstance = Artifact.attach(verificationRegistryAddress);
+  const digestDetails = await contractInstance.getDetails(
+    organizationAddress,
+    digest
+  );
+  const nonce = digestDetails.nonce;
   const { typeDataHash } = await getTypedDataHashForOnHoldType(
     digest,
     organizationAddress,
@@ -1636,10 +1634,6 @@ async function addOnHoldByDelegateSigned(
   const signingKey = delegate._signingKey;
   const { v, r, s } = signingKey().signDigest(typeDataHash);
   // 3. Send Signed Transaction
-  const anySender = entity3;
-  const Artifact = await ethers.getContractFactory(artifactName, anySender);
-  const contractInstance = Artifact.attach(verificationRegistryAddress);
-
   const result = await contractInstance.onHoldByDelegateSigned(
     digest,
     organizationAddress,
@@ -1656,6 +1650,7 @@ async function addOnHoldByDelegateSigned(
     .withArgs(digest, organizationAddress, status, anyValue);
   const q = await contractInstance.getDetails(organizationAddress, digest);
   expect(q.onHold).to.equal(status);
+  expect(q.nonce).to.equal(nonce.add(1));
 
   return { v, r, s, nonce };
 }
@@ -1665,32 +1660,35 @@ async function addOnHoldByDelegateWithCustomTypeSigned(
   message = genericMessage,
   organizationAddress: string,
   status: boolean,
-  delegate: Wallet,
-  nonce = keccak256(toUtf8Bytes(randomUUID()))
+  delegate: Wallet
 ) {
+  const anySender = entity3;
+  const Artifact = await ethers.getContractFactory(artifactName, anySender);
+  const contractInstance = Artifact.attach(verificationRegistryAddress);
   const digest = keccak256(toUtf8Bytes(message));
+  const initialState = await contractInstance.getDetails(
+    organizationAddress,
+    digest
+  );
   const { typeDataHash } =
     await getTypedDataHashForOnHoldWithCustomTypeOfDelegate_Type(
       digest,
       organizationAddress,
       status,
-      nonce,
+      initialState.nonce,
       customDelegateType
     );
   // sign type data hash
   const signingKey = delegate._signingKey;
   const { v, r, s } = signingKey().signDigest(typeDataHash);
   // 3. Send Signed Transaction
-  const anySender = entity3;
-  const Artifact = await ethers.getContractFactory(artifactName, anySender);
-  const contractInstance = Artifact.attach(verificationRegistryAddress);
 
   const result = await contractInstance.onHoldByDelegateWithCustomTypeSigned(
     customDelegateType,
     organizationAddress,
     digest,
     status,
-    nonce,
+    initialState.nonce,
     v,
     r,
     s
@@ -1703,5 +1701,6 @@ async function addOnHoldByDelegateWithCustomTypeSigned(
   const q = await contractInstance.getDetails(organizationAddress, digest);
   expect(q.onHold).to.equal(status);
 
+  const nonce = initialState.nonce;
   return { v, r, s, nonce };
 }

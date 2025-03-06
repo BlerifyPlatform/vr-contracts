@@ -27,12 +27,12 @@ contract VerificationRegistry is IVerificationRegistry, IdentityHandler {
         keccak256("Issue(bytes32 digest,uint256 exp,address identity)");
     bytes32 private constant ONHOLD_TYPEHASH =
         keccak256(
-            "OnHold(bytes32 digest,address identity,bool onHoldStatus,bytes32 nonce)"
+            "OnHold(bytes32 digest,address identity,bool onHoldStatus,uint64 nonce)"
         );
 
     bytes32 private constant ONHOLD_WITH_CUSTOM_DELEGATE_TYPE_TYPEHASH =
         keccak256(
-            "OnHoldByDelegateWithCustomType(bytes32 digest,address identity,bool onHoldStatus,bytes32 nonce,bytes32 delegateType)"
+            "OnHoldByDelegateWithCustomType(bytes32 digest,address identity,bool onHoldStatus,uint64 nonce,bytes32 delegateType)"
         );
 
     function issue(bytes32 digest, uint256 exp, address identity) external {
@@ -83,7 +83,18 @@ contract VerificationRegistry is IVerificationRegistry, IdentityHandler {
         bool onHoldStatus
     ) external {
         _validateController(getDidRegistry(identity), _msgSender(), identity);
-        _onHoldChange(_msgSender(), digest, onHoldStatus);
+        _onHoldChange(identity, digest, onHoldStatus);
+    }
+
+    function _onHoldChangeWithNonceManagement(
+        address by,
+        bytes32 digest,
+        bool onHoldStatus,
+        uint64 nonce
+    ) private {
+        Detail storage detail = registers[digest][by];
+        require(detail.nonce == nonce, "IN");
+        _onHoldChangeCore(by, digest, onHoldStatus, detail);
     }
 
     function _onHoldChange(
@@ -91,11 +102,21 @@ contract VerificationRegistry is IVerificationRegistry, IdentityHandler {
         bytes32 digest,
         bool onHoldStatus
     ) private {
-        uint256 currentTime = block.timestamp;
         Detail storage detail = registers[digest][by];
+        _onHoldChangeCore(by, digest, onHoldStatus, detail);
+    }
+
+    function _onHoldChangeCore(
+        address by,
+        bytes32 digest,
+        bool onHoldStatus,
+        Detail storage detail
+    ) private {
+        uint256 currentTime = block.timestamp;
         require(detail.exp > currentTime || detail.exp == 0, "ER");
         require(detail.onHold != onHoldStatus, "IOHCS");
         detail.onHold = onHoldStatus;
+        detail.nonce++;
         emit NewOnHoldChange(digest, by, onHoldStatus, currentTime);
     }
 
@@ -103,7 +124,7 @@ contract VerificationRegistry is IVerificationRegistry, IdentityHandler {
         bytes32 digest,
         address identity,
         bool onHoldStatus,
-        bytes32 nonce,
+        uint64 nonce,
         uint8 sigV,
         bytes32 sigR,
         bytes32 sigS
@@ -126,8 +147,7 @@ contract VerificationRegistry is IVerificationRegistry, IdentityHandler {
             sigS,
             completeHash
         );
-        _onHoldChange(identity, digest, onHoldStatus);
-        _validateAndSetNonce(identity, nonce);
+        _onHoldChangeWithNonceManagement(identity, digest, onHoldStatus, nonce);
     }
 
     function _revoke(address by, bytes32 digest) private {
@@ -420,7 +440,7 @@ contract VerificationRegistry is IVerificationRegistry, IdentityHandler {
         bytes32 digest,
         address identity,
         bool onHoldStatus,
-        bytes32 nonce,
+        uint64 nonce,
         uint8 sigV,
         bytes32 sigR,
         bytes32 sigS
@@ -443,7 +463,7 @@ contract VerificationRegistry is IVerificationRegistry, IdentityHandler {
         address identity,
         bytes32 digest,
         bool onHoldStatus,
-        bytes32 nonce,
+        uint64 nonce,
         uint8 sigV,
         bytes32 sigR,
         bytes32 sigS
@@ -461,6 +481,7 @@ contract VerificationRegistry is IVerificationRegistry, IdentityHandler {
             digest,
             onHoldStatus,
             message,
+            nonce,
             sigV,
             sigR,
             sigS
@@ -472,7 +493,7 @@ contract VerificationRegistry is IVerificationRegistry, IdentityHandler {
         address identity,
         bytes32 digest,
         bool onHoldStatus,
-        bytes32 nonce,
+        uint64 nonce,
         uint8 sigV,
         bytes32 sigR,
         bytes32 sigS
@@ -491,6 +512,7 @@ contract VerificationRegistry is IVerificationRegistry, IdentityHandler {
             digest,
             onHoldStatus,
             message,
+            nonce,
             sigV,
             sigR,
             sigS
@@ -503,6 +525,7 @@ contract VerificationRegistry is IVerificationRegistry, IdentityHandler {
         bytes32 digest,
         bool onHoldStatus,
         bytes memory message,
+        uint64 nonce,
         uint8 sigV,
         bytes32 sigR,
         bytes32 sigS
@@ -522,7 +545,7 @@ contract VerificationRegistry is IVerificationRegistry, IdentityHandler {
             completeHash,
             dt
         );
-        _onHoldChange(identity, digest, onHoldStatus);
+        _onHoldChangeWithNonceManagement(identity, digest, onHoldStatus, nonce);
     }
 
     function onHoldByDelegateWithCustomType(
@@ -540,7 +563,7 @@ contract VerificationRegistry is IVerificationRegistry, IdentityHandler {
         address identity,
         bytes32 digest,
         bool onHoldStatus,
-        bytes32 nonce,
+        uint64 nonce,
         uint8 sigV,
         bytes32 sigR,
         bytes32 sigS
