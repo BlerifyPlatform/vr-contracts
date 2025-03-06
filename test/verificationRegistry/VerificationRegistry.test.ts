@@ -557,6 +557,7 @@ describe(artifactName, function () {
       const signingKey = impersonator._signingKey;
       const { v, r, s } = signingKey().signDigest(typeDataHash);
       // 3. Send Signed Transaction
+      const nonce = 0;
       const anySender = entity3;
       const Artifact = await ethers.getContractFactory(artifactName, anySender);
       const contractInstance = Artifact.attach(verificationRegistryAddress);
@@ -564,11 +565,42 @@ describe(artifactName, function () {
         digest,
         exp,
         organization.address,
+        nonce,
         v,
         r,
         s
       );
       await handleRevert("IC", action);
+    });
+    it("Should throw on attempting to issue signed with an invalid nonce", async () => {
+      const organization = ethers.Wallet.createRandom();
+      const nonce = 3;
+      const { typeDataHash, digest, exp } = await getTypedDataHashForIssue(
+        organization.address,
+        EIP712ContractName,
+        "some message",
+        3600 * 24 * 365,
+        network.config.chainId,
+        contractVersion,
+        nonce
+      );
+      // sign type data hash
+      const signingKey = organization._signingKey;
+      const { v, r, s } = signingKey().signDigest(typeDataHash);
+      // 3. Send Signed Transaction
+      const anySender = entity3;
+      const Artifact = await ethers.getContractFactory(artifactName, anySender);
+      const contractInstance = Artifact.attach(verificationRegistryAddress);
+      const action = contractInstance.issueSigned(
+        digest,
+        exp,
+        organization.address,
+        nonce,
+        v,
+        r,
+        s
+      );
+      await handleRevert("IN", action);
     });
     it("Should issue by delegate by signed way", async () => {
       const organization = entity1;
@@ -934,7 +966,8 @@ async function issueSigned(
   message = "some message",
   delta = 3600 * 24 * 365,
   chainId = network.config.chainId,
-  anySender = entity2
+  anySender = entity2,
+  nonce = 0
 ) {
   const { typeDataHash, digest, exp } = await getTypedDataHashForIssue(
     organization.address,
@@ -954,6 +987,7 @@ async function issueSigned(
     digest,
     exp,
     organization.address,
+    nonce,
     v,
     r,
     s
@@ -1003,7 +1037,8 @@ async function issueByDelegateSigned(
   message = "some message",
   delta = 3600 * 24 * 365,
   chainId = network.config.chainId,
-  anySender = entity2
+  anySender = entity2,
+  nonce = 0
 ) {
   const { typeDataHash, digest, exp } = await getTypedDataHashForIssue(
     organization.address,
@@ -1023,6 +1058,7 @@ async function issueByDelegateSigned(
     digest,
     exp,
     organization.address,
+    nonce,
     v,
     r,
     s
@@ -1074,7 +1110,8 @@ async function issueByDelegateWithCustomDelegateTypeSigned(
   message = "some message",
   delta = 3600 * 24 * 365,
   chainId = network.config.chainId,
-  anySender = entity2
+  anySender = entity2,
+  nonce = 0
 ) {
   const { typeDataHash, digest, exp } = await getTypedDataHashForIssue(
     organizationAddress,
@@ -1096,6 +1133,7 @@ async function issueByDelegateWithCustomDelegateTypeSigned(
       digest,
       exp,
       organizationAddress,
+      nonce,
       v,
       r,
       s
@@ -1148,11 +1186,14 @@ async function getTypedDataHashForIssue(
   message = "some message",
   delta = 3600 * 24 * 365,
   chainId = network.config.chainId,
-  version = contractVersion
+  version = contractVersion,
+  nonce = 0
 ): Promise<{ typeDataHash: string; digest: string; exp: number }> {
   const ISSUE_TYPEHASH = keccak256(
-    toUtf8Bytes("Issue(bytes32 digest,uint256 exp,address identity)")
-  ); // OK -> 0xaaf414ba23a8cfcf004a7f75188441e59666f98d85447b5665cf04052d8e2bc3
+    toUtf8Bytes(
+      "Issue(bytes32 digest,uint256 exp,address identity,uint64 nonce)"
+    )
+  );
 
   // 0. Build digest
   const digest = keccak256(toUtf8Bytes(message));
@@ -1160,8 +1201,8 @@ async function getTypedDataHashForIssue(
   // 1. Build struct data hash
   const exp = Math.floor(Date.now() / 1000) + delta;
   const encodedMessage = defaultAbiCoder.encode(
-    ["bytes32", "bytes32", "uint256", "address"],
-    [ISSUE_TYPEHASH, digest, exp, organizationAddress]
+    ["bytes32", "bytes32", "uint256", "address", "uint64"],
+    [ISSUE_TYPEHASH, digest, exp, organizationAddress, nonce]
   );
   const structHash = keccak256(arrayify(encodedMessage)); // OK
 

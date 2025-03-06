@@ -87,6 +87,7 @@ interface IVerificationRegistry {
         bytes32 digest,
         uint256 exp,
         address identity,
+        uint64 nonce,
         uint8 sigV,
         bytes32 sigR,
         bytes32 sigS
@@ -104,6 +105,7 @@ interface IVerificationRegistry {
         bytes32 digest,
         uint256 exp,
         address identity,
+        uint64 nonce,
         uint8 sigV,
         bytes32 sigR,
         bytes32 sigS
@@ -122,6 +124,7 @@ interface IVerificationRegistry {
         bytes32 digest,
         uint256 exp,
         address identity,
+        uint64 nonce,
         uint8 sigV,
         bytes32 sigR,
         bytes32 sigS

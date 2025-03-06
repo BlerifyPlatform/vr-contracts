@@ -24,7 +24,9 @@ contract VerificationRegistry is IVerificationRegistry, IdentityHandler {
     bytes32 private constant REVOKE_TYPEHASH =
         keccak256("Revoke(bytes32 digest,address identity)");
     bytes32 private constant ISSUE_TYPEHASH =
-        keccak256("Issue(bytes32 digest,uint256 exp,address identity)");
+        keccak256(
+            "Issue(bytes32 digest,uint256 exp,address identity,uint64 nonce)"
+        );
     bytes32 private constant ONHOLD_TYPEHASH =
         keccak256(
             "OnHold(bytes32 digest,address identity,bool onHoldStatus,bytes32 nonce)"
@@ -37,12 +39,18 @@ contract VerificationRegistry is IVerificationRegistry, IdentityHandler {
 
     function issue(bytes32 digest, uint256 exp, address identity) external {
         _validateController(getDidRegistry(identity), _msgSender(), identity);
-        _issue(identity, digest, exp);
+        _issue(identity, digest, exp, 0);
     }
 
-    function _issue(address by, bytes32 digest, uint256 exp) private {
+    function _issue(
+        address by,
+        bytes32 digest,
+        uint256 exp,
+        uint64 nonce
+    ) private {
         Detail memory detail = registers[digest][by];
         require(detail.iat == 0 && detail.exp == 0, "RAE");
+        require(detail.nonce == nonce, "IN");
         uint256 iat = block.timestamp;
         detail.iat = iat;
         detail.nonce++;
@@ -178,7 +186,7 @@ contract VerificationRegistry is IVerificationRegistry, IdentityHandler {
             defaultDelegateType,
             _msgSender()
         );
-        _issue(identity, digest, exp);
+        _issue(identity, digest, exp, 0);
     }
 
     function issueByDelegateWithCustomType(
@@ -188,13 +196,14 @@ contract VerificationRegistry is IVerificationRegistry, IdentityHandler {
         uint256 exp
     ) external {
         _validateDelegateWithCustomType(delegateType, identity, _msgSender());
-        _issue(identity, digest, exp);
+        _issue(identity, digest, exp, 0);
     }
 
     function issueSigned(
         bytes32 digest,
         uint256 exp,
         address identity,
+        uint64 nonce,
         uint8 sigV,
         bytes32 sigR,
         bytes32 sigS
@@ -203,7 +212,8 @@ contract VerificationRegistry is IVerificationRegistry, IdentityHandler {
             ISSUE_TYPEHASH,
             digest,
             exp,
-            identity
+            identity,
+            nonce
         );
         bytes32 structHash = keccak256(message);
         bytes32 completeHash = _hashTypedDataV4(structHash);
@@ -216,13 +226,14 @@ contract VerificationRegistry is IVerificationRegistry, IdentityHandler {
             sigS,
             completeHash
         );
-        _issue(identity, digest, exp);
+        _issue(identity, digest, exp, nonce);
     }
 
     function issueByDelegateSigned(
         bytes32 digest,
         uint256 exp,
         address identity,
+        uint64 nonce,
         uint8 sigV,
         bytes32 sigR,
         bytes32 sigS
@@ -233,6 +244,7 @@ contract VerificationRegistry is IVerificationRegistry, IdentityHandler {
             identity,
             digest,
             exp,
+            nonce,
             sigV,
             sigR,
             sigS
@@ -244,6 +256,7 @@ contract VerificationRegistry is IVerificationRegistry, IdentityHandler {
         bytes32 digest,
         uint256 exp,
         address identity,
+        uint64 nonce,
         uint8 sigV,
         bytes32 sigR,
         bytes32 sigS
@@ -254,6 +267,7 @@ contract VerificationRegistry is IVerificationRegistry, IdentityHandler {
             identity,
             digest,
             exp,
+            nonce,
             sigV,
             sigR,
             sigS
@@ -265,6 +279,7 @@ contract VerificationRegistry is IVerificationRegistry, IdentityHandler {
         address identity,
         bytes32 digest,
         uint256 exp,
+        uint64 nonce,
         uint8 sigV,
         bytes32 sigR,
         bytes32 sigS
@@ -273,7 +288,8 @@ contract VerificationRegistry is IVerificationRegistry, IdentityHandler {
             ISSUE_TYPEHASH,
             digest,
             exp,
-            identity
+            identity,
+            nonce
         );
         bytes32 structHash = keccak256(message);
         bytes32 completeHash = _hashTypedDataV4(structHash);
@@ -290,7 +306,7 @@ contract VerificationRegistry is IVerificationRegistry, IdentityHandler {
             completeHash,
             dt
         );
-        _issue(identity, digest, exp);
+        _issue(identity, digest, exp, nonce);
     }
 
     function revokeSigned(
