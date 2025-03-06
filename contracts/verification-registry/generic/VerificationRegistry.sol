@@ -139,6 +139,7 @@ contract VerificationRegistry is IVerificationRegistry, IdentityHandler {
         if (detail.onHold) {
             detail.onHold = false;
         }
+        detail.nonce++;
         emit NewRevocation(digest, by, detail.iat, exp);
     }
 

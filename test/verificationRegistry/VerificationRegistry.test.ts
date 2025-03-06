@@ -601,7 +601,13 @@ describe(artifactName, function () {
       const message = "some message";
       const delta = 3600 * 24 * 365;
       await issue(verificationRegistryAddress, "some message", delta, entity1);
-      await revoke(verificationRegistryAddress, message, entity1);
+      const expectedNonce = 2;
+      await revoke(
+        verificationRegistryAddress,
+        message,
+        entity1,
+        expectedNonce
+      );
     });
     it("Should revoke by delegate", async () => {
       const organization = entity1;
@@ -752,7 +758,8 @@ async function issue(
 async function revoke(
   _verificationRegistryAddress = verificationRegistryAddress,
   message = genericMessage,
-  sender = entity1
+  sender = entity1,
+  expectedNonce = 0
 ) {
   const digest = keccak256(toUtf8Bytes(message));
   const Artifact = await ethers.getContractFactory(artifactName, sender);
@@ -764,6 +771,7 @@ async function revoke(
   const details = await verificationRegistry.getDetails(sender.address, digest);
   expect(details.isRevoked).to.equal(true);
   expect(details.exp).to.be.greaterThan(0);
+  expect(details.nonce).to.eq(expectedNonce);
 }
 
 async function toggletOnHold(
