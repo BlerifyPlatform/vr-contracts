@@ -33,7 +33,13 @@ interface IVerificationRegistry {
     )
         external
         view
-        returns (uint256 iat, uint256 exp, bool onHold, bool isRevoked);
+        returns (
+            uint256 iat,
+            uint256 exp,
+            bool onHold,
+            bool isRevoked,
+            uint64 nonce
+        );
 
     /**
      * Optional way to register a data change. In this case the delegate sends the data on behalf of the main actor
@@ -175,5 +181,6 @@ interface IVerificationRegistry {
         uint256 exp;
         bool onHold;
         bool isRevoked;
+        uint64 nonce;
     }
 }

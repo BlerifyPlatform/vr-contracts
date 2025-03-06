@@ -433,6 +433,10 @@ describe(artifactName, function () {
   });
 
   describe("Issuance methods", () => {
+    it("Should issue", async () => {
+      const message = "some message";
+      await issue(verificationRegistryAddress, message);
+    });
     it("Should issue by delegate", async () => {
       const organization = entity1;
       const delegate = entity2;
@@ -742,6 +746,7 @@ async function issue(
   expect(q.exp).to.equal(exp);
   expect(q.onHold).to.equal(false);
   expect(q.isRevoked).to.equal(false);
+  expect(q.nonce).to.equal(1);
 }
 
 async function revoke(

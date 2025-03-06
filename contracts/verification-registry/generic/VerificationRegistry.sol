@@ -45,6 +45,7 @@ contract VerificationRegistry is IVerificationRegistry, IdentityHandler {
         require(detail.iat == 0 && detail.exp == 0, "RAE");
         uint256 iat = block.timestamp;
         detail.iat = iat;
+        detail.nonce++;
         if (exp > 0) {
             require(exp > block.timestamp, "IET");
             // just skipping exp if zero, to save gas
@@ -147,13 +148,20 @@ contract VerificationRegistry is IVerificationRegistry, IdentityHandler {
     )
         external
         view
-        returns (uint256 iat, uint256 exp, bool onHold, bool isRevoked)
+        returns (
+            uint256 iat,
+            uint256 exp,
+            bool onHold,
+            bool isRevoked,
+            uint64 nonce
+        )
     {
         Detail memory detail = registers[digest][issuer];
         iat = detail.iat;
         exp = detail.exp;
         onHold = detail.onHold;
         isRevoked = detail.isRevoked;
+        nonce = detail.nonce;
     }
 
     function issueByDelegate(
