@@ -4,10 +4,19 @@ pragma solidity 0.8.18;
 
 interface IVerificationRegistry {
     /**
-     * Once revoked it will not longer be valid
+     * An irreversible inital state that allows issuing entities to attest that an element (represented by the "digest") is valid and active
+     * @param digest a unique identifier (typically a hash such as keccak256) defined at an application level
+     * @param exp The time in the future at which an element will not be considered valid anymore
+     * @param identity the identity on whose behalf the issuance is made
+     *
      */
     function issue(bytes32 digest, uint256 exp, address identity) external;
 
+    /**
+     * An irreversible state indicating that an element (represented by the "digest") has been revoked by the issuing entity
+     * @param digest a unique identifier (typically a hash such as keccak256) defined at an application level
+     * @param identity the identity on whose behalf the revocation is made
+     */
     function revoke(bytes32 digest, address identity) external;
 
     /**
@@ -17,6 +26,13 @@ interface IVerificationRegistry {
      */
     function update(bytes32 digest, uint256 exp, address identity) external;
 
+    /**
+     * A reversible state indicating that an element (represented by the "digest") has been placed under "observation" by the issuing entity
+     * @param digest a unique identifier (typically a hash such as keccak256) defined at an application level
+     * @param identity the identity on whose behalf the on-hold state change is made
+     * @param onHoldStatus When "true" it indicates that an element (represented by the "digest") will be put on "observation" and
+     * thus shouldn't be considered valid nor revoked. When false, the method restores the element to a active and thus valid state
+     */
     function onHoldChange(
         bytes32 digest,
         address identity,
@@ -42,7 +58,7 @@ interface IVerificationRegistry {
         );
 
     /**
-     * Optional way to register a data change. In this case the delegate sends the data on behalf of the main actor
+     * Optional way to register a data change. In this case an authorized the delegate sends the data on behalf of the main actor
      *
      */
     function issueByDelegate(
@@ -51,8 +67,16 @@ interface IVerificationRegistry {
         uint256 exp
     ) external;
 
+    /**
+     * Optional way to revoke a data change. In this case an authorized delegate sends the data on behalf of the main actor
+     *
+     */
     function revokeByDelegate(address identity, bytes32 digest) external;
 
+    /**
+     * Optional way to update the expiration date of an element. In this case an authorized delegate sends the data on behalf of the main actor
+     *
+     */
     function onHoldByDelegate(
         address identity,
         bytes32 digest,
@@ -60,8 +84,10 @@ interface IVerificationRegistry {
     ) external;
 
     /**
-     * @param delegateType: must coincide with some delegate that was registered under the "identity" by using the method "addDelegateType"
-     * Optional way to register a data change. In this case the delegate sends the data on behalf of the main actor
+     * @param delegateType: must match with a delegate that was registered under the "identity" using the method "addDelegateType"
+     * Optional way to register a data change. In this case an authorized delegate sends the data on behalf of the main actor
+     * @notice for further clarification, check "issue" method description
+     *
      */
     function issueByDelegateWithCustomType(
         bytes32 delegateType,
@@ -70,12 +96,24 @@ interface IVerificationRegistry {
         uint256 exp
     ) external;
 
+    /**
+     * @param delegateType: must match with a delegate that was registered under the "identity" using the method "addDelegateType"
+     * Optional way to revoke an element. In this case an authorized delegate sends the data on behalf of the main actor
+     * @notice for further clarification, check "revoke" method description
+     *
+     */
     function revokeByDelegateWithCustomType(
         bytes32 delegateType,
         address identity,
         bytes32 digest
     ) external;
 
+    /**
+     * @param delegateType: must match with a delegate that was registered under the "identity" using the method "addDelegateType"
+     * Optional way to place or restore an element to/from on-hold state. In this case an authorized delegate sends the data on behalf of the main actor
+     * @notice for further clarification, check "onHoldChange" method description
+     *
+     */
     function onHoldByDelegateWithCustomType(
         bytes32 delegateType,
         address identity,
@@ -83,6 +121,14 @@ interface IVerificationRegistry {
         bool onHoldStatus
     ) external;
 
+    /**
+     * Optional way to place an element in the "issue" state. In this case the entity sends the data using an EIP-712 signed transaction
+     * @notice for further clarification, check "issue" method description
+     * @param sigV ecdsa signature component
+     * @param sigR ecdsa signature component
+     * @param sigS ecdsa signature component
+     *
+     */
     function issueSigned(
         bytes32 digest,
         uint256 exp,
@@ -92,6 +138,14 @@ interface IVerificationRegistry {
         bytes32 sigS
     ) external;
 
+    /**
+     * Optional way to place an element in the "revoke" state. In this case the entity sends the data using an EIP-712 signed transaction
+     * @notice for further clarification, check "revoke" method description
+     * @param sigV ecdsa signature component
+     * @param sigR ecdsa signature component
+     * @param sigS ecdsa signature component
+     *
+     */
     function revokeSigned(
         bytes32 digest,
         address identity,
@@ -100,6 +154,14 @@ interface IVerificationRegistry {
         bytes32 sigS
     ) external;
 
+    /**
+     * Optional way to update the expiration date of an element. In this case the delegate of an entity sends the data using an EIP-712 signed transaction
+     * @notice for further clarification, check "update" method description
+     * @param sigV ecdsa signature component
+     * @param sigR ecdsa signature component
+     * @param sigS ecdsa signature component
+     *
+     */
     function updateSigned(
         bytes32 digest,
         uint256 exp,
@@ -110,6 +172,14 @@ interface IVerificationRegistry {
         bytes32 sigS
     ) external;
 
+    /**
+     * Optional way to place an element in the "on-hold" state. In this case the entity sends the data using an EIP-712 signed transaction
+     * @notice for further clarification, check "onHoldChange" method description
+     * @param sigV ecdsa signature component
+     * @param sigR ecdsa signature component
+     * @param sigS ecdsa signature component
+     *
+     */
     function onHoldChangeSigned(
         bytes32 digest,
         address identity,
@@ -120,6 +190,14 @@ interface IVerificationRegistry {
         bytes32 sigS
     ) external;
 
+    /**
+     * Optional way to place an element in the "issue" state. In this case the delegate of an entity sends the data using an EIP-712 signed transaction
+     * @notice for further clarification, check "issue" method description
+     * @param sigV ecdsa signature component
+     * @param sigR ecdsa signature component
+     * @param sigS ecdsa signature component
+     *
+     */
     function issueByDelegateSigned(
         bytes32 digest,
         uint256 exp,
@@ -129,6 +207,14 @@ interface IVerificationRegistry {
         bytes32 sigS
     ) external;
 
+    /**
+     * Optional way to place an element in the "revoke" state. In this case the delegate of an entity sends the data using an EIP-712 signed transaction
+     * @notice for further clarification, check "revoke" method description
+     * @param sigV ecdsa signature component
+     * @param sigR ecdsa signature component
+     * @param sigS ecdsa signature component
+     *
+     */
     function revokeByDelegateSigned(
         bytes32 digest,
         address identity,
@@ -137,6 +223,14 @@ interface IVerificationRegistry {
         bytes32 sigS
     ) external;
 
+    /**
+     * Optional way to place an element in the "on-hold" state. In this case the delegate of an entity sends the data using an EIP-712 signed transaction
+     * @notice for further clarification, check "onHoldChange" method description
+     * @param sigV ecdsa signature component
+     * @param sigR ecdsa signature component
+     * @param sigS ecdsa signature component
+     *
+     */
     function onHoldByDelegateSigned(
         bytes32 digest,
         address identity,
@@ -147,6 +241,14 @@ interface IVerificationRegistry {
         bytes32 sigS
     ) external;
 
+    /**
+     * Optional way to update the expiration date of an element. In this case the delegate of an entity sends the data using an EIP-712 signed transaction
+     * @notice for further clarification, check "update" method description
+     * @param sigV ecdsa signature component
+     * @param sigR ecdsa signature component
+     * @param sigS ecdsa signature component
+     *
+     */
     function updateByDelegateSigned(
         bytes32 digest,
         uint256 exp,
@@ -157,6 +259,15 @@ interface IVerificationRegistry {
         bytes32 sigS
     ) external;
 
+    /**
+     * @param delegateType: must match with a delegate that was registered under the "identity" using the method "addDelegateType"
+     * Optional way to place an element in the "issue" state. In this case the delegate of an entity sends the data using an EIP-712 signed transaction
+     * @notice for further clarification, check "issue" method description
+     * @param sigV ecdsa signature component
+     * @param sigR ecdsa signature component
+     * @param sigS ecdsa signature component
+     *
+     */
     function issueByDelegateWithCustomDelegateTypeSigned(
         bytes32 delegateType,
         bytes32 digest,
@@ -167,6 +278,15 @@ interface IVerificationRegistry {
         bytes32 sigS
     ) external;
 
+    /**
+     * @param delegateType: must match with a delegate that was registered under the "identity" using the method "addDelegateType"
+     * Optional way to place an element in the "revoke" state. In this case the delegate of an entity sends the data using an EIP-712 signed transaction
+     * @notice for further clarification, check "revoke" method description
+     * @param sigV ecdsa signature component
+     * @param sigR ecdsa signature component
+     * @param sigS ecdsa signature component
+     *
+     */
     function revokeByDelegateWithCustomDelegateTypeSigned(
         bytes32 delegateType,
         bytes32 digest,
@@ -176,6 +296,15 @@ interface IVerificationRegistry {
         bytes32 sigS
     ) external;
 
+    /**
+     * @param delegateType: must match with a delegate that was registered under the "identity" using the method "addDelegateType"
+     * Optional way to place an element in the "on-hod" state. In this case the delegate of an entity sends the data using an EIP-712 signed transaction
+     * @notice for further clarification, check "onHoldChange" method description
+     * @param sigV ecdsa signature component
+     * @param sigR ecdsa signature component
+     * @param sigS ecdsa signature component
+     *
+     */
     function onHoldByDelegateWithCustomTypeSigned(
         bytes32 delegateType,
         address identity,
@@ -187,6 +316,15 @@ interface IVerificationRegistry {
         bytes32 sigS
     ) external;
 
+    /**
+     * @param delegateType: must match with a delegate that was registered under the "identity" using the method "addDelegateType"
+     * Optional way to update the expiration date of an element. In this case the delegate of an entity sends the data using an EIP-712 signed transaction
+     * @notice for further clarification, check "update" method description
+     * @param sigV ecdsa signature component
+     * @param sigR ecdsa signature component
+     * @param sigS ecdsa signature component
+     *
+     */
     function updateByDelegateWithCustomTypeSigned(
         bytes32 delegateType,
         bytes32 digest,
