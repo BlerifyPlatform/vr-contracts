@@ -176,6 +176,16 @@ contract VerificationRegistry is IVerificationRegistry, IdentityHandler {
         );
     }
 
+    function updateByDelegateWithCustomType(
+        bytes32 delegateType,
+        bytes32 digest,
+        uint256 exp,
+        address identity
+    ) external {
+        _validateDelegateWithCustomType(delegateType, identity, _msgSender());
+        _update(digest, exp, identity);
+    }
+
     function updateByDelegateWithCustomTypeSigned(
         bytes32 delegateType,
         bytes32 digest,

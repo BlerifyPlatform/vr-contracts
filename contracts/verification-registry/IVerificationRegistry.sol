@@ -100,6 +100,26 @@ interface IVerificationRegistry {
         bytes32 sigS
     ) external;
 
+    function updateSigned(
+        bytes32 digest,
+        uint256 exp,
+        address identity,
+        uint64 nonce,
+        uint8 sigV,
+        bytes32 sigR,
+        bytes32 sigS
+    ) external;
+
+    function onHoldChangeSigned(
+        bytes32 digest,
+        address identity,
+        bool onHoldStatus,
+        uint64 nonce,
+        uint8 sigV,
+        bytes32 sigR,
+        bytes32 sigS
+    ) external;
+
     function issueByDelegateSigned(
         bytes32 digest,
         uint256 exp,
@@ -112,6 +132,26 @@ interface IVerificationRegistry {
     function revokeByDelegateSigned(
         bytes32 digest,
         address identity,
+        uint8 sigV,
+        bytes32 sigR,
+        bytes32 sigS
+    ) external;
+
+    function onHoldByDelegateSigned(
+        bytes32 digest,
+        address identity,
+        bool onHoldStatus,
+        uint64 nonce,
+        uint8 sigV,
+        bytes32 sigR,
+        bytes32 sigS
+    ) external;
+
+    function updateByDelegateSigned(
+        bytes32 digest,
+        uint256 exp,
+        address identity,
+        uint64 nonce,
         uint8 sigV,
         bytes32 sigR,
         bytes32 sigS
@@ -131,6 +171,28 @@ interface IVerificationRegistry {
         bytes32 delegateType,
         bytes32 digest,
         address identity,
+        uint8 sigV,
+        bytes32 sigR,
+        bytes32 sigS
+    ) external;
+
+    function onHoldByDelegateWithCustomTypeSigned(
+        bytes32 delegateType,
+        address identity,
+        bytes32 digest,
+        bool onHoldStatus,
+        uint64 nonce,
+        uint8 sigV,
+        bytes32 sigR,
+        bytes32 sigS
+    ) external;
+
+    function updateByDelegateWithCustomTypeSigned(
+        bytes32 delegateType,
+        bytes32 digest,
+        uint256 exp,
+        address identity,
+        uint64 nonce,
         uint8 sigV,
         bytes32 sigR,
         bytes32 sigS

@@ -754,6 +754,30 @@ describe(artifactName, function () {
         delegate
       );
     });
+    it("Should update by delegate with custom type", async () => {
+      const customDelegateType =
+        "0x0be0ff6adc81f13f4d66a7dbb4cd4b6018141f5d65f53b245681255a1d2667f5";
+      const organization = entity1;
+      const delegate = entity2;
+      await setCustomDelegateType(organization, customDelegateType);
+      await authorizeDelegate(
+        delegate.address,
+        organization,
+        defaultDidRegistryInstance.address,
+        customDelegateType
+      );
+
+      const message = "some message";
+      await issue(verificationRegistryAddress, message);
+      await updateByDelegateWithCustomType(
+        customDelegateType,
+        verificationRegistryAddress,
+        "some message",
+        86400 * 365,
+        organization,
+        delegate
+      );
+    });
     it("Shoud update by delegate by signed way", async () => {
       const message = "someMessage";
       const organization = entity1;
@@ -933,6 +957,39 @@ async function updateByDelegate(
   expect(q.exp).to.equal(exp);
   expect(q.onHold).to.equal(false);
   expect(q.nonce).to.equal(nonce.add(1));
+}
+
+async function updateByDelegateWithCustomType(
+  customDelegateType: string,
+  _verificationRegistryAddress = verificationRegistryAddress,
+  message = genericMessage,
+  delta = 3600 * 24 * 365,
+  organization = entity1,
+  delegate = entity2
+) {
+  const digest = keccak256(toUtf8Bytes(message));
+  const exp = Math.floor(Date.now() / 1000) + delta;
+  const Artifact = await ethers.getContractFactory(artifactName, delegate);
+  const verificationRegistry = Artifact.attach(_verificationRegistryAddress);
+  const initialState = await verificationRegistry.getDetails(
+    organization.address,
+    digest
+  );
+  const initialNonce = initialState.nonce;
+  const result = await verificationRegistry.updateByDelegateWithCustomType(
+    customDelegateType,
+    digest,
+    exp,
+    organization.address
+  );
+
+  await expect(result)
+    .to.emit(verificationRegistry, "NewUpdate")
+    .withArgs(digest, organization.address, exp);
+  const q = await verificationRegistry.getDetails(organization.address, digest);
+  expect(q.exp).to.equal(exp);
+  expect(q.onHold).to.equal(false);
+  expect(q.nonce).to.equal(initialNonce.add(1));
 }
 
 async function issueByDelegateWithCustomType(

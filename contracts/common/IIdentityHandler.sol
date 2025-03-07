@@ -64,11 +64,21 @@ interface IIdentityHandler {
         address indexed newDidRegistry
     );
 
+    /**
+     * @dev Keeps track of a custo DID registry, in case an actor wants to use a different one rather than the default DID Registry
+     * @param didRegistry The custom Did registry
+     * @param nonce An incrementing value that follows every state change
+     */
     struct DidRegistryDetails {
         address didRegistry;
         uint64 nonce;
     }
 
+    /**
+     * @dev A struct to keep track of custom delegate types
+     * @param status Indicating whether a particuar delegate type is set or not for a given actor
+     * @param nonce An incrementing value that follows every state change
+     */
     struct DelegateTypeState {
         bool status;
         uint64 nonce;
