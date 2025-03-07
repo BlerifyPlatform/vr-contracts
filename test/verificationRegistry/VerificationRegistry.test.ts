@@ -757,6 +757,14 @@ describe(artifactName, function () {
         delegate
       );
     });
+    it("Shoud update by delegate by signed way", async () => {
+      const message = "someMessage";
+      const organization = entity1;
+      const delegate = ethers.Wallet.createRandom();
+      await authorizeDelegate(delegate.address, organization);
+      await issue(verificationRegistryAddress, message);
+      await updateByDelegateSigned(message, organization.address, delegate);
+    });
   });
 });
 
@@ -1853,6 +1861,59 @@ async function addOnHoldByDelegateSigned(
     .withArgs(digest, organizationAddress, status, anyValue);
   const q = await contractInstance.getDetails(organizationAddress, digest);
   expect(q.onHold).to.equal(status);
+  expect(q.nonce).to.equal(nonce.add(1));
+
+  return { v, r, s, nonce };
+}
+
+async function updateByDelegateSigned(
+  message = genericMessage,
+  organizationAddress: string,
+  delegate: Wallet,
+  delta = 3600 * 24 * 365,
+  chainId = network.config.chainId
+) {
+  const _digest = keccak256(toUtf8Bytes(message));
+  const anySender = entity3;
+  const Artifact = await ethers.getContractFactory(artifactName, anySender);
+  const contractInstance = Artifact.attach(verificationRegistryAddress);
+  const digestDetails = await contractInstance.getDetails(
+    organizationAddress,
+    _digest
+  );
+
+  const nonce = digestDetails.nonce;
+  const { typeDataHash, digest, exp } = await getTypedDataHashForUpdate(
+    organizationAddress,
+    nonce,
+    EIP712ContractName,
+    message,
+    delta,
+    chainId
+  );
+
+  // sign type data hash
+  const signingKey = delegate._signingKey;
+  const { v, r, s } = signingKey().signDigest(typeDataHash);
+  // 3. Send Signed Transaction
+  const result = await contractInstance.updateByDelegateSigned(
+    digest,
+    exp,
+    organizationAddress,
+    nonce,
+    v,
+    r,
+    s
+  );
+  await result.wait();
+
+  await expect(result)
+    .to.emit(contractInstance, "NewUpdate")
+    .withArgs(digest, organizationAddress, exp);
+
+  const q = await contractInstance.getDetails(organizationAddress, digest);
+  expect(q.exp).to.equal(exp);
+  expect(q.onHold).to.equal(false);
   expect(q.nonce).to.equal(nonce.add(1));
 
   return { v, r, s, nonce };

@@ -120,6 +120,87 @@ contract VerificationRegistry is IVerificationRegistry, IdentityHandler {
         _update(digest, exp, identity);
     }
 
+    function updateByDelegateSigned(
+        bytes32 digest,
+        uint256 exp,
+        address identity,
+        uint64 nonce,
+        uint8 sigV,
+        bytes32 sigR,
+        bytes32 sigS
+    ) external {
+        bytes32 delegateType = _getDefaultDelegateType();
+        _updateByDelegateSigned(
+            delegateType,
+            digest,
+            exp,
+            identity,
+            nonce,
+            sigV,
+            sigR,
+            sigS
+        );
+    }
+
+    function _updateByDelegateSigned(
+        bytes32 delegateType,
+        bytes32 digest,
+        uint256 exp,
+        address identity,
+        uint64 nonce,
+        uint8 sigV,
+        bytes32 sigR,
+        bytes32 sigS
+    ) private {
+        bytes memory message = abi.encode(
+            UPDATE_TYPEHASH,
+            digest,
+            exp,
+            identity,
+            nonce
+        );
+        __updateByDelegateSigned(
+            delegateType,
+            digest,
+            exp,
+            identity,
+            message,
+            nonce,
+            sigV,
+            sigR,
+            sigS
+        );
+    }
+
+    function __updateByDelegateSigned(
+        bytes32 delegateType,
+        bytes32 digest,
+        uint256 exp,
+        address identity,
+        bytes memory message,
+        uint64 nonce,
+        uint8 sigV,
+        bytes32 sigR,
+        bytes32 sigS
+    ) private {
+        bytes32 structHash = keccak256(message);
+        bytes32 completeHash = _hashTypedDataV4(structHash);
+
+        bytes32 dt = delegateType; // avoid stack too deep
+
+        address didRegistry = getDidRegistry(identity).didRegistry;
+        checkDelegateSignature(
+            didRegistry,
+            identity,
+            sigV,
+            sigR,
+            sigS,
+            completeHash,
+            dt
+        );
+        _updateWithNonce(digest, exp, identity, nonce);
+    }
+
     function _update(bytes32 digest, uint256 exp, address by) private {
         Detail storage detail = registers[digest][by];
         uint64 nonce = detail.nonce;
