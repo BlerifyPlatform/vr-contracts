@@ -743,6 +743,20 @@ describe(artifactName, function () {
       await issueSigned(organization);
       await updateSigned(organization);
     });
+    it("Should update by delegate", async () => {
+      const organization = entity1;
+      const delegate = entity2;
+      await authorizeDelegate(delegate.address, organization);
+      const message = "some message";
+      await issue(verificationRegistryAddress, message);
+      await updateByDelegate(
+        verificationRegistryAddress,
+        message,
+        3600 * 24 * 365,
+        organization,
+        delegate
+      );
+    });
   });
 });
 
@@ -845,6 +859,36 @@ async function issueByDelegate(
   const q = await verificationRegistry.getDetails(organization.address, digest);
   expect(q.exp).to.equal(exp);
   expect(q.onHold).to.equal(false);
+}
+
+async function updateByDelegate(
+  _verificationRegistryAddress = verificationRegistryAddress,
+  message = genericMessage,
+  delta = 3600 * 24 * 365,
+  organization = entity1,
+  delegate = entity2
+) {
+  const Artifact = await ethers.getContractFactory(artifactName, delegate);
+  const verificationRegistry = Artifact.attach(_verificationRegistryAddress);
+  const digest = keccak256(toUtf8Bytes(message));
+  const details = await verificationRegistry.getDetails(
+    organization.address,
+    digest
+  );
+  const nonce = details.nonce;
+  const exp = Math.floor(Date.now() / 1000) + delta;
+  const result = await verificationRegistry.updateByDelegate(
+    digest,
+    exp,
+    organization.address
+  );
+  await expect(result)
+    .to.emit(verificationRegistry, "NewUpdate")
+    .withArgs(digest, organization.address, exp);
+  const q = await verificationRegistry.getDetails(organization.address, digest);
+  expect(q.exp).to.equal(exp);
+  expect(q.onHold).to.equal(false);
+  expect(q.nonce).to.equal(nonce.add(1));
 }
 
 async function issueByDelegateWithCustomType(

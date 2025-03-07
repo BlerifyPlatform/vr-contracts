@@ -103,6 +103,23 @@ contract VerificationRegistry is IVerificationRegistry, IdentityHandler {
         _updateWithNonce(digest, exp, identity, nonce);
     }
 
+    function updateByDelegate(
+        bytes32 digest,
+        uint256 exp,
+        address identity
+    ) external {
+        // resolve didRegistry to call
+        address registryAddress = getDidRegistry(identity).didRegistry;
+
+        _validateDelegate(
+            registryAddress,
+            identity,
+            defaultDelegateType,
+            _msgSender()
+        );
+        _update(digest, exp, identity);
+    }
+
     function _update(bytes32 digest, uint256 exp, address by) private {
         Detail storage detail = registers[digest][by];
         uint64 nonce = detail.nonce;
