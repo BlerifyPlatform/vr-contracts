@@ -24,7 +24,7 @@ interface IIdentityHandler {
      */
     function getDidRegistry(
         address identity
-    ) external view returns (address didRegistryAddress);
+    ) external view returns (DidRegistryDetails memory didRegistryDetails);
 
     /**
      * @dev Associates a delegate type with an entity. The intention is to allow just that kind of delegates to perform actions
@@ -60,7 +60,12 @@ interface IIdentityHandler {
      */
     event DidRegistryChange(
         address indexed by,
-        address indexed didRegistry,
-        bool status
+        address indexed oldDidRegistry,
+        address indexed newDidRegistry
     );
+
+    struct DidRegistryDetails {
+        address didRegistry;
+        uint64 nonce;
+    }
 }

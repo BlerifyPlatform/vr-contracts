@@ -5,6 +5,7 @@
 - IET -> Invalid Expiration Time
 - IN -> Invalid Nonce
 - NAR -> Nonce already used
+- IDR -> Invalid DID Registry
 
 ## Credential Registry
 

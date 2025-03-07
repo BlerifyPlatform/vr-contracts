@@ -171,6 +171,7 @@ interface IVerificationRegistry {
      * @param iat: date at which a data was issued
      * @param exp: date at which the data is expiring
      * @param OnHold: indicates whether the data is under observation
+     * @param nonce: increments with every state change
      * @note:
      scenario 1: !(iat = 0 && exp = 0 && onHold = false && isRevoked = false), means data "exists" given an issuer, a digest for the context of this contract.
      scenario 2: iat > 0 && 0 < exp < currentTime -> "expired"

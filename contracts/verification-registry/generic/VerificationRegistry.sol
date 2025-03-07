@@ -36,7 +36,11 @@ contract VerificationRegistry is IVerificationRegistry, IdentityHandler {
         );
 
     function issue(bytes32 digest, uint256 exp, address identity) external {
-        _validateController(getDidRegistry(identity), _msgSender(), identity);
+        _validateController(
+            getDidRegistry(identity).didRegistry,
+            _msgSender(),
+            identity
+        );
         _issue(identity, digest, exp);
     }
 
@@ -57,7 +61,11 @@ contract VerificationRegistry is IVerificationRegistry, IdentityHandler {
     }
 
     function update(bytes32 digest, uint256 exp, address identity) external {
-        _validateController(getDidRegistry(identity), _msgSender(), identity);
+        _validateController(
+            getDidRegistry(identity).didRegistry,
+            _msgSender(),
+            identity
+        );
         _update(digest, exp, identity);
     }
 
@@ -73,7 +81,11 @@ contract VerificationRegistry is IVerificationRegistry, IdentityHandler {
     }
 
     function revoke(bytes32 digest, address identity) external {
-        _validateController(getDidRegistry(identity), _msgSender(), identity);
+        _validateController(
+            getDidRegistry(identity).didRegistry,
+            _msgSender(),
+            identity
+        );
         _revoke(_msgSender(), digest);
     }
 
@@ -82,7 +94,11 @@ contract VerificationRegistry is IVerificationRegistry, IdentityHandler {
         address identity,
         bool onHoldStatus
     ) external {
-        _validateController(getDidRegistry(identity), _msgSender(), identity);
+        _validateController(
+            getDidRegistry(identity).didRegistry,
+            _msgSender(),
+            identity
+        );
         _onHoldChange(identity, digest, onHoldStatus);
     }
 
@@ -138,7 +154,7 @@ contract VerificationRegistry is IVerificationRegistry, IdentityHandler {
         );
         bytes32 structHash = keccak256(message);
         bytes32 completeHash = _hashTypedDataV4(structHash);
-        address didRegistry = getDidRegistry(identity);
+        address didRegistry = getDidRegistry(identity).didRegistry;
         checkControllerSignature(
             didRegistry,
             identity,
@@ -191,7 +207,7 @@ contract VerificationRegistry is IVerificationRegistry, IdentityHandler {
         uint256 exp
     ) external {
         // resolve didRegistry to call
-        address registryAddress = getDidRegistry(identity);
+        address registryAddress = getDidRegistry(identity).didRegistry;
 
         _validateDelegate(
             registryAddress,
@@ -228,7 +244,7 @@ contract VerificationRegistry is IVerificationRegistry, IdentityHandler {
         );
         bytes32 structHash = keccak256(message);
         bytes32 completeHash = _hashTypedDataV4(structHash);
-        address didRegistry = getDidRegistry(identity);
+        address didRegistry = getDidRegistry(identity).didRegistry;
         checkControllerSignature(
             didRegistry,
             identity,
@@ -301,7 +317,7 @@ contract VerificationRegistry is IVerificationRegistry, IdentityHandler {
 
         bytes32 dt = delegateType; // avoid stack too deep
 
-        address didRegistry = getDidRegistry(identity);
+        address didRegistry = getDidRegistry(identity).didRegistry;
         checkDelegateSignature(
             didRegistry,
             identity,
@@ -324,7 +340,7 @@ contract VerificationRegistry is IVerificationRegistry, IdentityHandler {
         bytes memory message = abi.encode(REVOKE_TYPEHASH, digest, identity);
         bytes32 structHash = keccak256(message);
         bytes32 completeHash = _hashTypedDataV4(structHash); // hash of: business data,contract name, eip712 version, address this, chainId, eip712 signature and salt
-        address didRegistry = getDidRegistry(identity);
+        address didRegistry = getDidRegistry(identity).didRegistry;
         checkControllerSignature(
             didRegistry,
             identity,
@@ -337,7 +353,7 @@ contract VerificationRegistry is IVerificationRegistry, IdentityHandler {
     }
 
     function revokeByDelegate(address identity, bytes32 digest) external {
-        address registryAddress = getDidRegistry(identity);
+        address registryAddress = getDidRegistry(identity).didRegistry;
         _validateDelegate(
             registryAddress,
             identity,
@@ -388,7 +404,7 @@ contract VerificationRegistry is IVerificationRegistry, IdentityHandler {
 
         bytes32 dt = delegateType; // avoid stack too deep
 
-        address didRegistry = getDidRegistry(identity);
+        address didRegistry = getDidRegistry(identity).didRegistry;
         checkDelegateSignature(
             didRegistry,
             identity,
@@ -426,7 +442,7 @@ contract VerificationRegistry is IVerificationRegistry, IdentityHandler {
         bool onHoldStatus
     ) external {
         // resolve didRegistry to call
-        address registryAddress = getDidRegistry(identity);
+        address registryAddress = getDidRegistry(identity).didRegistry;
         _validateDelegate(
             registryAddress,
             identity,
@@ -535,7 +551,7 @@ contract VerificationRegistry is IVerificationRegistry, IdentityHandler {
 
         bytes32 dt = delegateType; // avoid stack too deep
 
-        address didRegistry = getDidRegistry(identity);
+        address didRegistry = getDidRegistry(identity).didRegistry;
         checkDelegateSignature(
             didRegistry,
             identity,

@@ -183,7 +183,38 @@ describe(artifactName, function () {
         r,
         s
       );
-      await handleRevert("NAR", action);
+      await handleRevert("IN", action);
+    });
+    it("Should fail when trying to send a valid already didRegistry", async () => {
+      const { didRegistry } = await deployDidRegistry();
+      const organization = ethers.Wallet.createRandom();
+
+      const { nonce } = await addDidRegistrySigned(
+        didRegistry.address,
+        organization
+      );
+
+      // re send
+      const newNonce = nonce.add(1);
+      const { typeDataHash } = await getTypedDataHashForAddDidRegistry(
+        didRegistry.address,
+        newNonce
+      );
+      // sign type data hash
+      const signingKey = organization._signingKey;
+      const newSignature = signingKey().signDigest(typeDataHash);
+      // 3. Send Signed Transaction
+      const attacker = entity2;
+      const Artifact = await ethers.getContractFactory(artifactName, attacker);
+      const contractInstance = Artifact.attach(verificationRegistryAddress);
+      const action = contractInstance.addDidRegistrySigned(
+        didRegistry.address,
+        newNonce,
+        newSignature.v,
+        newSignature.r,
+        newSignature.s
+      );
+      await handleRevert("IDR", action);
     });
     it("Shoud fail to remove a DIDRegistry by signed way when unauthorized", async () => {
       // when removing an attacker will never be able to remove a registry that was registered by another entity,
@@ -193,7 +224,7 @@ describe(artifactName, function () {
       const { didRegistry } = await deployDidRegistry();
       const organization = ethers.Wallet.createRandom();
       await addDidRegistrySigned(didRegistry.address, organization);
-      await removeDidRegistrySigned(didRegistry.address, organization);
+      await removeDidRegistrySigned(organization);
     });
     it("Shoud fail to add a deletegate type by signed way when unauthorized", async () => {
       // when removing an attacker will never be able to add a delegate that was registered by another entity,
@@ -1222,13 +1253,13 @@ async function getTypedDataHashForRevocation(
 
 async function getTypedDataHashForAddDidRegistry(
   didRegistryAddressCandidate: string,
-  nonce: string,
+  nonce: number | BigNumber,
   contractName = EIP712ContractName,
   chainId = network.config.chainId,
   version = contractVersion
 ): Promise<{ typeDataHash: string }> {
   const ADD_DID_REGISTRY_TYPEHASH = keccak256(
-    toUtf8Bytes("AddDidRegistry(address didRegistryAddress,bytes32 nonce)")
+    toUtf8Bytes("AddDidRegistry(address didRegistryAddress,uint64 nonce)")
   );
 
   // 0. Build digest
@@ -1236,7 +1267,7 @@ async function getTypedDataHashForAddDidRegistry(
 
   // 1. Build struct data hash
   const encodedMessage = defaultAbiCoder.encode(
-    ["bytes32", "address", "bytes32"],
+    ["bytes32", "address", "uint64"],
     [ADD_DID_REGISTRY_TYPEHASH, didRegistryAddressCandidate, nonce]
   );
   const structHash = keccak256(arrayify(encodedMessage)); // OK
@@ -1377,13 +1408,13 @@ async function getTypedDataHash(
 }
 
 async function getTypedDataHashForRemoveDidRegistry(
-  nonce: string,
+  nonce: number | BigNumber,
   contractName = EIP712ContractName,
   chainId = network.config.chainId,
   version = contractVersion
 ): Promise<{ typeDataHash: string }> {
   const REMOVE_DID_REGISTRY_TYPEHASH = keccak256(
-    toUtf8Bytes("RemoveDidRegistry(bytes32 nonce)")
+    toUtf8Bytes("RemoveDidRegistry(uint64 nonce)")
   );
 
   // 0. Build digest
@@ -1391,7 +1422,7 @@ async function getTypedDataHashForRemoveDidRegistry(
 
   // 1. Build struct data hash
   const encodedMessage = defaultAbiCoder.encode(
-    ["bytes32", "bytes32"],
+    ["bytes32", "uint64"],
     [REMOVE_DID_REGISTRY_TYPEHASH, nonce]
   );
   const structHash = keccak256(arrayify(encodedMessage)); // OK
@@ -1451,8 +1482,17 @@ async function addDidRegistrySigned(
   didRegistryAddress: string,
   organization: Wallet
 ) {
-  const randonNonceSeed = randomUUID();
-  const nonce = keccak256(toUtf8Bytes(randonNonceSeed));
+  const anySender = entity3;
+  const Artifact = await ethers.getContractFactory(artifactName, anySender);
+  const contractInstance = Artifact.attach(verificationRegistryAddress);
+  const didRegistryDetails = await contractInstance.getDidRegistry(
+    organization.address
+  );
+  const oldDidRegistry = (
+    await contractInstance.didRegistries(organization.address)
+  ).didRegistry;
+
+  let nonce = didRegistryDetails.nonce;
   const { typeDataHash } = await getTypedDataHashForAddDidRegistry(
     didRegistryAddress,
     nonce
@@ -1461,10 +1501,6 @@ async function addDidRegistrySigned(
   const signingKey = organization._signingKey;
   const { v, r, s } = signingKey().signDigest(typeDataHash);
   // 3. Send Signed Transaction
-  const anySender = entity3;
-  const Artifact = await ethers.getContractFactory(artifactName, anySender);
-  const contractInstance = Artifact.attach(verificationRegistryAddress);
-
   const result = await contractInstance.addDidRegistrySigned(
     didRegistryAddress,
     nonce,
@@ -1475,30 +1511,38 @@ async function addDidRegistrySigned(
   await result.wait();
   await expect(result)
     .to.emit(contractInstance, "DidRegistryChange")
-    .withArgs(organization.address, didRegistryAddress, true);
+    .withArgs(organization.address, oldDidRegistry, didRegistryAddress);
+  const updatedNonce = (
+    await contractInstance.getDidRegistry(organization.address)
+  ).nonce;
+
+  expect(updatedNonce).to.equal(nonce.add(1));
+
   return { v, r, s, nonce };
 }
 
-async function removeDidRegistrySigned(
-  didRegistryAddress: string,
-  organization: Wallet
-) {
-  const randonNonceSeed = randomUUID();
-  const nonce = keccak256(toUtf8Bytes(randonNonceSeed));
+async function removeDidRegistrySigned(organization: Wallet) {
+  const anySender = entity3;
+  const Artifact = await ethers.getContractFactory(artifactName, anySender);
+  const contractInstance = Artifact.attach(verificationRegistryAddress);
+  const initialState = await contractInstance.didRegistries(
+    organization.address
+  );
+  const nonce = initialState.nonce;
   const { typeDataHash } = await getTypedDataHashForRemoveDidRegistry(nonce);
   // sign type data hash
   const signingKey = organization._signingKey;
   const { v, r, s } = signingKey().signDigest(typeDataHash);
   // 3. Send Signed Transaction
-  const anySender = entity3;
-  const Artifact = await ethers.getContractFactory(artifactName, anySender);
-  const contractInstance = Artifact.attach(verificationRegistryAddress);
-
   const result = await contractInstance.removeDidRegistrySigned(nonce, v, r, s);
   await result.wait();
   await expect(result)
     .to.emit(contractInstance, "DidRegistryChange")
-    .withArgs(organization.address, didRegistryAddress, false);
+    .withArgs(
+      organization.address,
+      initialState.didRegistry,
+      ethers.constants.AddressZero
+    );
   return { v, r, s, nonce };
 }
 
