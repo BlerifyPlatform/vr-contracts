@@ -4,7 +4,6 @@ import { ethers, lacchain, network } from "hardhat";
 import { keccak256, toUtf8Bytes, formatBytes32String } from "ethers/lib/utils";
 import {
   DIDRegistryGM,
-  verificationRegistry,
   VerificationRegistry,
   VerificationRegistry__factory,
   VerificationRegistryGM,
@@ -18,8 +17,6 @@ import { DIDRegistry__factory } from "../../typechain-types/factories/utils/iden
 import { DIDRegistryGM__factory } from "../../typechain-types/factories/utils/identity/didRegistryGasModel/DIDRegistry.sol";
 import { SignerWithAddress } from "@nomiclabs/hardhat-ethers/signers";
 import { GasModelSignerModified } from "../../GasModelModified";
-import { randomUUID } from "crypto";
-import { identity } from "../../typechain-types/external";
 
 const artifactName = "VerificationRegistryGM";
 let deployer: SignerWithAddress | GasModelSignerModified;
@@ -412,7 +409,7 @@ describe(artifactName, function () {
       );
     });
 
-    it("Shoud failt to toggle on Hold by delegate by signed way with custom type when nonce already used", async () => {
+    it("Shoud fail to toggle on Hold by delegate by signed way with custom type when nonce already used", async () => {
       const message = "someMessage";
       const organization = entity1;
       const customDelegateType = formatBytes32String(
@@ -764,6 +761,45 @@ describe(artifactName, function () {
       await authorizeDelegate(delegate.address, organization);
       await issue(verificationRegistryAddress, message);
       await updateByDelegateSigned(message, organization.address, delegate);
+    });
+    it("Shoud update by delegate by signed way with custom type", async () => {
+      const message = "someMessage";
+      const organization = entity1;
+      const customDelegateType = formatBytes32String(
+        delegateTypeWithoutPadding
+      ); // bytes32 right padded
+
+      const delegate = ethers.Wallet.createRandom();
+      await authorizeDelegate(delegate.address, organization); // authorize delegate in DID registry
+      await setCustomDelegateType(organization, customDelegateType); // set a delagate type in verification registry
+
+      await issue(verificationRegistryAddress, message);
+      await updateByDelegateWithCustomTypeSigned(
+        customDelegateType,
+        message,
+        organization.address,
+        delegate
+      );
+    });
+    it("Should fail when trying to update with non authorized delegate", async () => {
+      const message = "someMessage";
+      const organization = entity1;
+      const customDelegateType = formatBytes32String(
+        delegateTypeWithoutPadding
+      ); // bytes32 right padded
+
+      const delegate = ethers.Wallet.createRandom();
+      // await authorizeDelegate(delegate.address, organization); // authorize delegate in DID registry
+      await setCustomDelegateType(organization, customDelegateType); // set a delagate type in verification registry
+
+      await issue(verificationRegistryAddress, message);
+      const action = updateByDelegateWithCustomTypeSigned(
+        customDelegateType,
+        message,
+        organization.address,
+        delegate
+      );
+      await handleRevert("ID", action);
     });
   });
 });
@@ -1529,6 +1565,38 @@ async function getTypedDataHashForOnHoldWithCustomTypeOfDelegate_Type(
   return typeDataHash;
 }
 
+async function getTypedDataHashForUpdateWithCustomTypeOfDelegate_Type(
+  organizationAddress: String,
+  nonce: number | BigNumber,
+  message = "some message",
+  delta = 3600 * 24 * 365,
+  delegateType: string
+): Promise<{ typeDataHash: string; exp: number }> {
+  // 0. Build digest
+  const digest = keccak256(toUtf8Bytes(message));
+  const exp = Math.floor(Date.now() / 1000) + delta;
+  const ONHOLD_WITH_CUSTOM_DELEGATE_TYPE_TYPEHASH = keccak256(
+    toUtf8Bytes(
+      "UpdateByDelegateWithCustomType(bytes32 digest,uint256 exp,address identity,uint64 nonce,bytes32 delegateType)"
+    )
+  );
+  // 1. Build struct data hash
+  const encodedMessage = defaultAbiCoder.encode(
+    ["bytes32", "bytes32", "uint256", "address", "uint64", "bytes32"],
+    [
+      ONHOLD_WITH_CUSTOM_DELEGATE_TYPE_TYPEHASH,
+      digest,
+      exp,
+      organizationAddress,
+      nonce,
+      delegateType,
+    ]
+  );
+
+  const typeDataHash = await getTypedDataHash(encodedMessage);
+  return { ...typeDataHash, exp };
+}
+
 async function getTypedDataHashForRemoveDelegateType(
   delegateType: string,
   nonce: number | BigNumber
@@ -1967,4 +2035,55 @@ async function addOnHoldByDelegateWithCustomTypeSigned(
 
   const nonce = initialState.nonce;
   return { v, r, s, nonce };
+}
+
+async function updateByDelegateWithCustomTypeSigned(
+  customDelegateType: string,
+  message = genericMessage,
+  organizationAddress: string,
+  delegate: Wallet,
+  delta = 3600 * 24 * 365
+) {
+  const anySender = entity3;
+  const Artifact = await ethers.getContractFactory(artifactName, anySender);
+  const contractInstance = Artifact.attach(verificationRegistryAddress);
+  const digest = keccak256(toUtf8Bytes(message));
+  const initialState = await contractInstance.getDetails(
+    organizationAddress,
+    digest
+  );
+  const nonce = initialState.nonce;
+  const { typeDataHash, exp } =
+    await getTypedDataHashForUpdateWithCustomTypeOfDelegate_Type(
+      organizationAddress,
+      nonce,
+      message,
+      delta,
+      customDelegateType
+    );
+  // sign type data hash
+  const signingKey = delegate._signingKey;
+  const { v, r, s } = signingKey().signDigest(typeDataHash);
+  // 3. Send Signed Transaction
+
+  const result = await contractInstance.updateByDelegateWithCustomTypeSigned(
+    customDelegateType,
+    digest,
+    exp,
+    organizationAddress,
+    initialState.nonce,
+    v,
+    r,
+    s
+  );
+  await result.wait();
+
+  await expect(result)
+    .to.emit(contractInstance, "NewUpdate")
+    .withArgs(digest, organizationAddress, exp);
+  const q = await contractInstance.getDetails(organizationAddress, digest);
+  expect(q.exp).to.equal(exp);
+  expect(q.onHold).to.equal(false);
+  expect(q.nonce).to.equal(nonce.add(1));
+  return { v, r, s };
 }

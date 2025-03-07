@@ -38,6 +38,10 @@ contract VerificationRegistry is IVerificationRegistry, IdentityHandler {
         keccak256(
             "Update(bytes32 digest,uint256 exp,address identity,uint64 nonce)"
         );
+    bytes32 private constant UPDATE_WITH_CUSTOM_DELEGATE_TYPE_TYPEHASH =
+        keccak256(
+            "UpdateByDelegateWithCustomType(bytes32 digest,uint256 exp,address identity,uint64 nonce,bytes32 delegateType)"
+        );
 
     function issue(bytes32 digest, uint256 exp, address identity) external {
         _validateController(
@@ -158,6 +162,59 @@ contract VerificationRegistry is IVerificationRegistry, IdentityHandler {
             exp,
             identity,
             nonce
+        );
+        __updateByDelegateSigned(
+            delegateType,
+            digest,
+            exp,
+            identity,
+            message,
+            nonce,
+            sigV,
+            sigR,
+            sigS
+        );
+    }
+
+    function updateByDelegateWithCustomTypeSigned(
+        bytes32 delegateType,
+        bytes32 digest,
+        uint256 exp,
+        address identity,
+        uint64 nonce,
+        uint8 sigV,
+        bytes32 sigR,
+        bytes32 sigS
+    ) external {
+        _updateByDelegateWithCustomTypeSigned(
+            delegateType,
+            digest,
+            exp,
+            identity,
+            nonce,
+            sigV,
+            sigR,
+            sigS
+        );
+    }
+
+    function _updateByDelegateWithCustomTypeSigned(
+        bytes32 delegateType,
+        bytes32 digest,
+        uint256 exp,
+        address identity,
+        uint64 nonce,
+        uint8 sigV,
+        bytes32 sigR,
+        bytes32 sigS
+    ) private {
+        bytes memory message = abi.encode(
+            UPDATE_WITH_CUSTOM_DELEGATE_TYPE_TYPEHASH,
+            digest,
+            exp,
+            identity,
+            nonce,
+            delegateType
         );
         __updateByDelegateSigned(
             delegateType,
