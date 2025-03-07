@@ -32,7 +32,7 @@ const delegateTypeWithoutPadding = "veriKey";
 const defaultDelegateType = formatBytes32String(delegateTypeWithoutPadding); // bytes32 right padded
 const EIP712ContractName = "VerificationRegistry";
 const unexpectedErrorMessage = "Unexpected failed";
-const contractVersion = "010";
+const contractVersion = "011";
 describe(artifactName, function () {
   async function deployDidRegistry() {
     let Artifact: DIDRegistry__factory | DIDRegistryGM__factory;
