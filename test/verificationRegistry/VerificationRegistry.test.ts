@@ -4,13 +4,12 @@ import { ethers, lacchain, network } from "hardhat";
 import { keccak256, toUtf8Bytes, formatBytes32String } from "ethers/lib/utils";
 import {
   DIDRegistryGM,
-  verificationRegistry,
   VerificationRegistry,
   VerificationRegistry__factory,
   VerificationRegistryGM,
   VerificationRegistryGM__factory,
 } from "../../typechain-types";
-import { Wallet } from "ethers";
+import { BigNumber, Wallet } from "ethers";
 import { defaultAbiCoder } from "ethers/lib/utils";
 import { arrayify } from "@ethersproject/bytes";
 import { DIDRegistry } from "../../typechain-types/utils/identity/didRegistry";
@@ -18,8 +17,6 @@ import { DIDRegistry__factory } from "../../typechain-types/factories/utils/iden
 import { DIDRegistryGM__factory } from "../../typechain-types/factories/utils/identity/didRegistryGasModel/DIDRegistry.sol";
 import { SignerWithAddress } from "@nomiclabs/hardhat-ethers/signers";
 import { GasModelSignerModified } from "../../GasModelModified";
-import { randomUUID } from "crypto";
-import { identity } from "../../typechain-types/external";
 
 const artifactName = "VerificationRegistryGM";
 let deployer: SignerWithAddress | GasModelSignerModified;
@@ -35,7 +32,7 @@ const delegateTypeWithoutPadding = "veriKey";
 const defaultDelegateType = formatBytes32String(delegateTypeWithoutPadding); // bytes32 right padded
 const EIP712ContractName = "VerificationRegistry";
 const unexpectedErrorMessage = "Unexpected failed";
-const contractVersion = "010";
+const contractVersion = "011";
 describe(artifactName, function () {
   async function deployDidRegistry() {
     let Artifact: DIDRegistry__factory | DIDRegistryGM__factory;
@@ -161,13 +158,13 @@ describe(artifactName, function () {
       const { didRegistry } = await deployDidRegistry();
       const organization = ethers.Wallet.createRandom();
 
-      await addDidRegistrySigned(didRegistry.address, organization);
+      await changeDidRegistrySigned(didRegistry.address, organization);
     });
     it("Should fail when trying to send an already signed transaction", async () => {
       const { didRegistry } = await deployDidRegistry();
       const organization = ethers.Wallet.createRandom();
 
-      const { v, r, s, nonce } = await addDidRegistrySigned(
+      const { v, r, s, nonce } = await changeDidRegistrySigned(
         didRegistry.address,
         organization
       );
@@ -176,14 +173,45 @@ describe(artifactName, function () {
       const attacker = entity2;
       const Artifact = await ethers.getContractFactory(artifactName, attacker);
       const contractInstance = Artifact.attach(verificationRegistryAddress);
-      const action = contractInstance.addDidRegistrySigned(
+      const action = contractInstance.changeDidRegistrySigned(
         didRegistry.address,
         nonce,
         v,
         r,
         s
       );
-      await handleRevert("NAR", action);
+      await handleRevert("IN", action);
+    });
+    it("Should fail when trying to send a valid already didRegistry", async () => {
+      const { didRegistry } = await deployDidRegistry();
+      const organization = ethers.Wallet.createRandom();
+
+      const { nonce } = await changeDidRegistrySigned(
+        didRegistry.address,
+        organization
+      );
+
+      // re send
+      const newNonce = nonce.add(1);
+      const { typeDataHash } = await getTypedDataHashForChangeDidRegistry(
+        didRegistry.address,
+        newNonce
+      );
+      // sign type data hash
+      const signingKey = organization._signingKey;
+      const newSignature = signingKey().signDigest(typeDataHash);
+      // 3. Send Signed Transaction
+      const attacker = entity2;
+      const Artifact = await ethers.getContractFactory(artifactName, attacker);
+      const contractInstance = Artifact.attach(verificationRegistryAddress);
+      const action = contractInstance.changeDidRegistrySigned(
+        didRegistry.address,
+        newNonce,
+        newSignature.v,
+        newSignature.r,
+        newSignature.s
+      );
+      await handleRevert("IDR", action);
     });
     it("Shoud fail to remove a DIDRegistry by signed way when unauthorized", async () => {
       // when removing an attacker will never be able to remove a registry that was registered by another entity,
@@ -192,8 +220,8 @@ describe(artifactName, function () {
     it("Shoud remove a DIDRegistry by signed way", async () => {
       const { didRegistry } = await deployDidRegistry();
       const organization = ethers.Wallet.createRandom();
-      await addDidRegistrySigned(didRegistry.address, organization);
-      await removeDidRegistrySigned(didRegistry.address, organization);
+      await changeDidRegistrySigned(didRegistry.address, organization);
+      await removeDidRegistrySigned(organization);
     });
     it("Shoud fail to add a deletegate type by signed way when unauthorized", async () => {
       // when removing an attacker will never be able to add a delegate that was registered by another entity,
@@ -237,7 +265,7 @@ describe(artifactName, function () {
       const message = "someMessage";
       const status = true;
       const digest = keccak256(toUtf8Bytes(message));
-      const nonce = keccak256(toUtf8Bytes(randomUUID()));
+      const nonce = 0;
       const { typeDataHash } = await getTypedDataHashForOnHoldType(
         digest,
         organization.address,
@@ -267,7 +295,8 @@ describe(artifactName, function () {
     it("Shoud toggle on Hold by signed way", async () => {
       const message = "someMessage";
       const organization = ethers.Wallet.createRandom();
-      await addOnHoldSigned(message, organization, true);
+      const nonce = 0;
+      await addOnHoldSigned(message, organization, true, nonce);
     });
     it("Shoud fail to toggle onHold status by signed way by delegate when unauthorized", async () => {});
     it("Shoud toggle on Hold by delegate by signed way", async () => {
@@ -287,9 +316,7 @@ describe(artifactName, function () {
       const message = "someMessage";
       const organization = entity1;
       const organizationAddress = organization.address;
-      const randonNonceSeed = randomUUID();
-      const nonce = keccak256(toUtf8Bytes(randonNonceSeed));
-
+      const nonce = 0;
       const attacker = ethers.Wallet.createRandom();
       const status = true;
       const digest = keccak256(toUtf8Bytes(message));
@@ -358,7 +385,7 @@ describe(artifactName, function () {
         r,
         s
       );
-      await handleRevert("IOHCS", action);
+      await handleRevert("IN", action);
     });
     it("Shoud toggle on Hold by delegate by signed way with custom type", async () => {
       const message = "someMessage";
@@ -382,7 +409,7 @@ describe(artifactName, function () {
       );
     });
 
-    it("Shoud failt to toggle on Hold by delegate by signed way with custom type when nonce already used", async () => {
+    it("Shoud fail to toggle on Hold by delegate by signed way with custom type when nonce already used", async () => {
       const message = "someMessage";
       const organization = entity1;
       const customDelegateType = formatBytes32String(
@@ -405,14 +432,6 @@ describe(artifactName, function () {
 
       const organizationAddress = organization.address;
       const digest = keccak256(toUtf8Bytes(message));
-      const { typeDataHash } =
-        await getTypedDataHashForOnHoldWithCustomTypeOfDelegate_Type(
-          digest,
-          organizationAddress,
-          status,
-          nonce,
-          customDelegateType
-        );
       // 3. Send Signed Transaction
       const anySender = entity3;
       const Artifact = await ethers.getContractFactory(artifactName, anySender);
@@ -428,11 +447,15 @@ describe(artifactName, function () {
         r,
         s
       );
-      await handleRevert("IOHCS", action);
+      await handleRevert("IN", action);
     });
   });
 
   describe("Issuance methods", () => {
+    it("Should issue", async () => {
+      const message = "some message";
+      await issue(verificationRegistryAddress, message);
+    });
     it("Should issue by delegate", async () => {
       const organization = entity1;
       const delegate = entity2;
@@ -597,7 +620,13 @@ describe(artifactName, function () {
       const message = "some message";
       const delta = 3600 * 24 * 365;
       await issue(verificationRegistryAddress, "some message", delta, entity1);
-      await revoke(verificationRegistryAddress, message, entity1);
+      const expectedNonce = 2;
+      await revoke(
+        verificationRegistryAddress,
+        message,
+        entity1,
+        expectedNonce
+      );
     });
     it("Should revoke by delegate", async () => {
       const organization = entity1;
@@ -705,6 +734,97 @@ describe(artifactName, function () {
         .to.emit(contractInstance, "NewUpdate")
         .withArgs(digest, organization.address, exp);
     });
+
+    it("Should update by signed way", async () => {
+      const organization = ethers.Wallet.createRandom();
+      await issueSigned(organization);
+      await updateSigned(organization);
+    });
+    it("Should update by delegate", async () => {
+      const organization = entity1;
+      const delegate = entity2;
+      await authorizeDelegate(delegate.address, organization);
+      const message = "some message";
+      await issue(verificationRegistryAddress, message);
+      await updateByDelegate(
+        verificationRegistryAddress,
+        message,
+        3600 * 24 * 365,
+        organization,
+        delegate
+      );
+    });
+    it("Should update by delegate with custom type", async () => {
+      const customDelegateType =
+        "0x0be0ff6adc81f13f4d66a7dbb4cd4b6018141f5d65f53b245681255a1d2667f5";
+      const organization = entity1;
+      const delegate = entity2;
+      await setCustomDelegateType(organization, customDelegateType);
+      await authorizeDelegate(
+        delegate.address,
+        organization,
+        defaultDidRegistryInstance.address,
+        customDelegateType
+      );
+
+      const message = "some message";
+      await issue(verificationRegistryAddress, message);
+      await updateByDelegateWithCustomType(
+        customDelegateType,
+        verificationRegistryAddress,
+        "some message",
+        86400 * 365,
+        organization,
+        delegate
+      );
+    });
+    it("Shoud update by delegate by signed way", async () => {
+      const message = "someMessage";
+      const organization = entity1;
+      const delegate = ethers.Wallet.createRandom();
+      await authorizeDelegate(delegate.address, organization);
+      await issue(verificationRegistryAddress, message);
+      await updateByDelegateSigned(message, organization.address, delegate);
+    });
+    it("Shoud update by delegate by signed way with custom type", async () => {
+      const message = "someMessage";
+      const organization = entity1;
+      const customDelegateType = formatBytes32String(
+        delegateTypeWithoutPadding
+      ); // bytes32 right padded
+
+      const delegate = ethers.Wallet.createRandom();
+      await authorizeDelegate(delegate.address, organization); // authorize delegate in DID registry
+      await setCustomDelegateType(organization, customDelegateType); // set a delagate type in verification registry
+
+      await issue(verificationRegistryAddress, message);
+      await updateByDelegateWithCustomTypeSigned(
+        customDelegateType,
+        message,
+        organization.address,
+        delegate
+      );
+    });
+    it("Should fail when trying to update with non authorized delegate", async () => {
+      const message = "someMessage";
+      const organization = entity1;
+      const customDelegateType = formatBytes32String(
+        delegateTypeWithoutPadding
+      ); // bytes32 right padded
+
+      const delegate = ethers.Wallet.createRandom();
+      // await authorizeDelegate(delegate.address, organization); // authorize delegate in DID registry
+      await setCustomDelegateType(organization, customDelegateType); // set a delagate type in verification registry
+
+      await issue(verificationRegistryAddress, message);
+      const action = updateByDelegateWithCustomTypeSigned(
+        customDelegateType,
+        message,
+        organization.address,
+        delegate
+      );
+      await handleRevert("ID", action);
+    });
   });
 });
 
@@ -742,12 +862,14 @@ async function issue(
   expect(q.exp).to.equal(exp);
   expect(q.onHold).to.equal(false);
   expect(q.isRevoked).to.equal(false);
+  expect(q.nonce).to.equal(1);
 }
 
 async function revoke(
   _verificationRegistryAddress = verificationRegistryAddress,
   message = genericMessage,
-  sender = entity1
+  sender = entity1,
+  expectedNonce = 0
 ) {
   const digest = keccak256(toUtf8Bytes(message));
   const Artifact = await ethers.getContractFactory(artifactName, sender);
@@ -759,6 +881,7 @@ async function revoke(
   const details = await verificationRegistry.getDetails(sender.address, digest);
   expect(details.isRevoked).to.equal(true);
   expect(details.exp).to.be.greaterThan(0);
+  expect(details.nonce).to.eq(expectedNonce);
 }
 
 async function toggletOnHold(
@@ -804,6 +927,69 @@ async function issueByDelegate(
   const q = await verificationRegistry.getDetails(organization.address, digest);
   expect(q.exp).to.equal(exp);
   expect(q.onHold).to.equal(false);
+}
+
+async function updateByDelegate(
+  _verificationRegistryAddress = verificationRegistryAddress,
+  message = genericMessage,
+  delta = 3600 * 24 * 365,
+  organization = entity1,
+  delegate = entity2
+) {
+  const Artifact = await ethers.getContractFactory(artifactName, delegate);
+  const verificationRegistry = Artifact.attach(_verificationRegistryAddress);
+  const digest = keccak256(toUtf8Bytes(message));
+  const details = await verificationRegistry.getDetails(
+    organization.address,
+    digest
+  );
+  const nonce = details.nonce;
+  const exp = Math.floor(Date.now() / 1000) + delta;
+  const result = await verificationRegistry.updateByDelegate(
+    digest,
+    exp,
+    organization.address
+  );
+  await expect(result)
+    .to.emit(verificationRegistry, "NewUpdate")
+    .withArgs(digest, organization.address, exp);
+  const q = await verificationRegistry.getDetails(organization.address, digest);
+  expect(q.exp).to.equal(exp);
+  expect(q.onHold).to.equal(false);
+  expect(q.nonce).to.equal(nonce.add(1));
+}
+
+async function updateByDelegateWithCustomType(
+  customDelegateType: string,
+  _verificationRegistryAddress = verificationRegistryAddress,
+  message = genericMessage,
+  delta = 3600 * 24 * 365,
+  organization = entity1,
+  delegate = entity2
+) {
+  const digest = keccak256(toUtf8Bytes(message));
+  const exp = Math.floor(Date.now() / 1000) + delta;
+  const Artifact = await ethers.getContractFactory(artifactName, delegate);
+  const verificationRegistry = Artifact.attach(_verificationRegistryAddress);
+  const initialState = await verificationRegistry.getDetails(
+    organization.address,
+    digest
+  );
+  const initialNonce = initialState.nonce;
+  const result = await verificationRegistry.updateByDelegateWithCustomType(
+    customDelegateType,
+    digest,
+    exp,
+    organization.address
+  );
+
+  await expect(result)
+    .to.emit(verificationRegistry, "NewUpdate")
+    .withArgs(digest, organization.address, exp);
+  const q = await verificationRegistry.getDetails(organization.address, digest);
+  expect(q.exp).to.equal(exp);
+  expect(q.onHold).to.equal(false);
+  expect(q.nonce).to.equal(initialNonce.add(1));
 }
 
 async function issueByDelegateWithCustomType(
@@ -877,12 +1063,16 @@ async function addCustomDidRegistry(
 ) {
   const Artifact = await ethers.getContractFactory(artifactName, organization);
   const verificationRegistryOrg = Artifact.attach(_verificationRegistryAddress);
-  const result = await verificationRegistryOrg.addDidRegistry(
+  const result = await verificationRegistryOrg.changeDidRegistry(
     customDidRegistryAddress
   );
   await expect(result)
     .to.emit(verificationRegistryOrg, "DidRegistryChange")
-    .withArgs(organization.address, customDidRegistryAddress, true);
+    .withArgs(
+      organization.address,
+      ethers.constants.AddressZero,
+      customDidRegistryAddress
+    );
 }
 
 async function revokeByDelegate(
@@ -959,6 +1149,53 @@ async function issueSigned(
   const q = await contractInstance.getDetails(organization.address, digest);
   expect(q.exp).to.equal(exp);
   expect(q.onHold).to.equal(false);
+}
+
+async function updateSigned(
+  organization: Wallet,
+  contractName = EIP712ContractName,
+  message = "some message",
+  delta = 3600 * 24 * 365,
+  chainId = network.config.chainId,
+  anySender = entity2
+) {
+  const Artifact = await ethers.getContractFactory(artifactName, anySender);
+  const contractInstance = Artifact.attach(verificationRegistryAddress);
+  const _digest = keccak256(toUtf8Bytes(message));
+  const digestDetails = await contractInstance.getDetails(
+    organization.address,
+    _digest
+  );
+  const nonce = digestDetails.nonce;
+  const { typeDataHash, digest, exp } = await getTypedDataHashForUpdate(
+    organization.address,
+    nonce,
+    contractName,
+    message,
+    delta,
+    chainId
+  );
+  // sign type data hash
+  const signingKey = organization._signingKey;
+  const { v, r, s } = signingKey().signDigest(typeDataHash);
+
+  // 3. Send Signed Transaction
+  const result = await contractInstance.updateSigned(
+    digest,
+    exp,
+    organization.address,
+    nonce,
+    v,
+    r,
+    s
+  );
+  await expect(result)
+    .to.emit(contractInstance, "NewUpdate")
+    .withArgs(digest, organization.address, exp);
+  const q = await contractInstance.getDetails(organization.address, digest);
+  expect(q.exp).to.equal(exp);
+  expect(q.onHold).to.equal(false);
+  expect(q.nonce).to.equal(nonce.add(1));
 }
 
 async function revokeSigned(
@@ -1147,7 +1384,7 @@ async function getTypedDataHashForIssue(
 ): Promise<{ typeDataHash: string; digest: string; exp: number }> {
   const ISSUE_TYPEHASH = keccak256(
     toUtf8Bytes("Issue(bytes32 digest,uint256 exp,address identity)")
-  ); // OK -> 0xaaf414ba23a8cfcf004a7f75188441e59666f98d85447b5665cf04052d8e2bc3
+  );
 
   // 0. Build digest
   const digest = keccak256(toUtf8Bytes(message));
@@ -1157,6 +1394,59 @@ async function getTypedDataHashForIssue(
   const encodedMessage = defaultAbiCoder.encode(
     ["bytes32", "bytes32", "uint256", "address"],
     [ISSUE_TYPEHASH, digest, exp, organizationAddress]
+  );
+  const structHash = keccak256(arrayify(encodedMessage)); // OK
+
+  // 2. EIP712
+  // 2.1 build domainSeparator
+  const TYPE_HASH = keccak256(
+    toUtf8Bytes(
+      "EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)"
+    )
+  );
+  const _hashedName = keccak256(toUtf8Bytes(contractName));
+  const _hashedVersion = keccak256(toUtf8Bytes(version));
+
+  const contractAddress = verificationRegistryAddress;
+  const eds = defaultAbiCoder.encode(
+    ["bytes32", "bytes32", "bytes32", "uint256", "address"],
+    [TYPE_HASH, _hashedName, _hashedVersion, chainId, contractAddress]
+  );
+  const domainSeparator = keccak256(eds); // OK
+
+  // 2.2 Build type data hash
+  // Inputs: structHash and domainSeparator
+  const typeData = ethers.utils.solidityPack(
+    ["bytes1", "bytes1", "bytes32", "bytes32"],
+    [0x19, 0x01, domainSeparator, structHash]
+  );
+  const typeDataHash = keccak256(typeData);
+  return { typeDataHash, exp, digest };
+}
+
+async function getTypedDataHashForUpdate(
+  organizationAddress: String,
+  nonce: number | BigNumber,
+  contractName = EIP712ContractName,
+  message = "some message",
+  delta = 3600 * 24 * 365,
+  chainId = network.config.chainId,
+  version = contractVersion
+): Promise<{ typeDataHash: string; digest: string; exp: number }> {
+  const UPDATE_TYPEHASH = keccak256(
+    toUtf8Bytes(
+      "Update(bytes32 digest,uint256 exp,address identity,uint64 nonce)"
+    )
+  );
+
+  // 0. Build digest
+  const digest = keccak256(toUtf8Bytes(message));
+
+  // 1. Build struct data hash
+  const exp = Math.floor(Date.now() / 1000) + delta;
+  const encodedMessage = defaultAbiCoder.encode(
+    ["bytes32", "bytes32", "uint256", "address", "uint64"],
+    [UPDATE_TYPEHASH, digest, exp, organizationAddress, nonce]
   );
   const structHash = keccak256(arrayify(encodedMessage)); // OK
 
@@ -1216,15 +1506,15 @@ async function getTypedDataHashForRevocation(
   return { typeDataHash, digest };
 }
 
-async function getTypedDataHashForAddDidRegistry(
+async function getTypedDataHashForChangeDidRegistry(
   didRegistryAddressCandidate: string,
-  nonce: string,
+  nonce: number | BigNumber,
   contractName = EIP712ContractName,
   chainId = network.config.chainId,
   version = contractVersion
 ): Promise<{ typeDataHash: string }> {
   const ADD_DID_REGISTRY_TYPEHASH = keccak256(
-    toUtf8Bytes("AddDidRegistry(address didRegistryAddress,bytes32 nonce)")
+    toUtf8Bytes("ChangeDidRegistry(address didRegistryAddress,uint64 nonce)")
   );
 
   // 0. Build digest
@@ -1232,7 +1522,7 @@ async function getTypedDataHashForAddDidRegistry(
 
   // 1. Build struct data hash
   const encodedMessage = defaultAbiCoder.encode(
-    ["bytes32", "address", "bytes32"],
+    ["bytes32", "address", "uint64"],
     [ADD_DID_REGISTRY_TYPEHASH, didRegistryAddressCandidate, nonce]
   );
   const structHash = keccak256(arrayify(encodedMessage)); // OK
@@ -1266,15 +1556,15 @@ async function getTypedDataHashForAddDidRegistry(
 
 async function getTypedDataHashForAddDelegateType(
   delegateType: string,
-  nonce: string
+  nonce: number | BigNumber
 ): Promise<{ typeDataHash: string }> {
   const ADD_DELEGATE_TYPEHASH = keccak256(
-    toUtf8Bytes("AddDelegateType(bytes32 delegateType,bytes32 nonce)")
+    toUtf8Bytes("AddDelegateType(bytes32 delegateType,uint64 nonce)")
   );
 
   // 1. Build struct data hash
   const encodedMessage = defaultAbiCoder.encode(
-    ["bytes32", "bytes32", "bytes32"],
+    ["bytes32", "bytes32", "uint64"],
     [ADD_DELEGATE_TYPEHASH, delegateType, nonce]
   );
 
@@ -1286,16 +1576,16 @@ async function getTypedDataHashForOnHoldType(
   digest: string,
   identity: string,
   onHoldStatus: boolean,
-  nonce: string
+  nonce: number | BigNumber
 ): Promise<{ typeDataHash: string }> {
   const ONHOLD_TYPEHASH = keccak256(
     toUtf8Bytes(
-      "OnHold(bytes32 digest,address identity,bool onHoldStatus,bytes32 nonce)"
+      "OnHold(bytes32 digest,address identity,bool onHoldStatus,uint64 nonce)"
     )
   );
   // 1. Build struct data hash
   const encodedMessage = defaultAbiCoder.encode(
-    ["bytes32", "bytes32", "address", "bool", "bytes32"],
+    ["bytes32", "bytes32", "address", "bool", "uint64"],
     [ONHOLD_TYPEHASH, digest, identity, onHoldStatus, nonce]
   );
 
@@ -1307,17 +1597,17 @@ async function getTypedDataHashForOnHoldWithCustomTypeOfDelegate_Type(
   digest: string,
   identity: string,
   onHoldStatus: boolean,
-  nonce: string,
+  nonce: number | BigNumber,
   delegateType: string
 ): Promise<{ typeDataHash: string }> {
   const ONHOLD_WITH_CUSTOM_DELEGATE_TYPE_TYPEHASH = keccak256(
     toUtf8Bytes(
-      "OnHoldByDelegateWithCustomType(bytes32 digest,address identity,bool onHoldStatus,bytes32 nonce,bytes32 delegateType)"
+      "OnHoldByDelegateWithCustomType(bytes32 digest,address identity,bool onHoldStatus,uint64 nonce,bytes32 delegateType)"
     )
   );
   // 1. Build struct data hash
   const encodedMessage = defaultAbiCoder.encode(
-    ["bytes32", "bytes32", "address", "bool", "bytes32", "bytes32"],
+    ["bytes32", "bytes32", "address", "bool", "uint64", "bytes32"],
     [
       ONHOLD_WITH_CUSTOM_DELEGATE_TYPE_TYPEHASH,
       digest,
@@ -1332,17 +1622,49 @@ async function getTypedDataHashForOnHoldWithCustomTypeOfDelegate_Type(
   return typeDataHash;
 }
 
+async function getTypedDataHashForUpdateWithCustomTypeOfDelegate_Type(
+  organizationAddress: String,
+  nonce: number | BigNumber,
+  message = "some message",
+  delta = 3600 * 24 * 365,
+  delegateType: string
+): Promise<{ typeDataHash: string; exp: number }> {
+  // 0. Build digest
+  const digest = keccak256(toUtf8Bytes(message));
+  const exp = Math.floor(Date.now() / 1000) + delta;
+  const ONHOLD_WITH_CUSTOM_DELEGATE_TYPE_TYPEHASH = keccak256(
+    toUtf8Bytes(
+      "UpdateByDelegateWithCustomType(bytes32 digest,uint256 exp,address identity,uint64 nonce,bytes32 delegateType)"
+    )
+  );
+  // 1. Build struct data hash
+  const encodedMessage = defaultAbiCoder.encode(
+    ["bytes32", "bytes32", "uint256", "address", "uint64", "bytes32"],
+    [
+      ONHOLD_WITH_CUSTOM_DELEGATE_TYPE_TYPEHASH,
+      digest,
+      exp,
+      organizationAddress,
+      nonce,
+      delegateType,
+    ]
+  );
+
+  const typeDataHash = await getTypedDataHash(encodedMessage);
+  return { ...typeDataHash, exp };
+}
+
 async function getTypedDataHashForRemoveDelegateType(
   delegateType: string,
-  nonce: string
+  nonce: number | BigNumber
 ): Promise<{ typeDataHash: string }> {
   const REMOVE_DELEGATE_TYPEHASH = keccak256(
-    toUtf8Bytes("RemoveDelegateType(bytes32 delegateType,bytes32 nonce)")
+    toUtf8Bytes("RemoveDelegateType(bytes32 delegateType,uint64 nonce)")
   );
 
   // 1. Build struct data hash
   const encodedMessage = defaultAbiCoder.encode(
-    ["bytes32", "bytes32", "bytes32"],
+    ["bytes32", "bytes32", "uint64"],
     [REMOVE_DELEGATE_TYPEHASH, delegateType, nonce]
   );
 
@@ -1373,13 +1695,13 @@ async function getTypedDataHash(
 }
 
 async function getTypedDataHashForRemoveDidRegistry(
-  nonce: string,
+  nonce: number | BigNumber,
   contractName = EIP712ContractName,
   chainId = network.config.chainId,
   version = contractVersion
 ): Promise<{ typeDataHash: string }> {
   const REMOVE_DID_REGISTRY_TYPEHASH = keccak256(
-    toUtf8Bytes("RemoveDidRegistry(bytes32 nonce)")
+    toUtf8Bytes("RemoveDidRegistry(uint64 nonce)")
   );
 
   // 0. Build digest
@@ -1387,7 +1709,7 @@ async function getTypedDataHashForRemoveDidRegistry(
 
   // 1. Build struct data hash
   const encodedMessage = defaultAbiCoder.encode(
-    ["bytes32", "bytes32"],
+    ["bytes32", "uint64"],
     [REMOVE_DID_REGISTRY_TYPEHASH, nonce]
   );
   const structHash = keccak256(arrayify(encodedMessage)); // OK
@@ -1443,13 +1765,22 @@ async function getDomainSeparator(
   return domainSeparator;
 }
 
-async function addDidRegistrySigned(
+async function changeDidRegistrySigned(
   didRegistryAddress: string,
   organization: Wallet
 ) {
-  const randonNonceSeed = randomUUID();
-  const nonce = keccak256(toUtf8Bytes(randonNonceSeed));
-  const { typeDataHash } = await getTypedDataHashForAddDidRegistry(
+  const anySender = entity3;
+  const Artifact = await ethers.getContractFactory(artifactName, anySender);
+  const contractInstance = Artifact.attach(verificationRegistryAddress);
+  const didRegistryDetails = await contractInstance.getDidRegistry(
+    organization.address
+  );
+  const oldDidRegistry = (
+    await contractInstance.didRegistries(organization.address)
+  ).didRegistry;
+
+  let nonce = didRegistryDetails.nonce;
+  const { typeDataHash } = await getTypedDataHashForChangeDidRegistry(
     didRegistryAddress,
     nonce
   );
@@ -1457,11 +1788,7 @@ async function addDidRegistrySigned(
   const signingKey = organization._signingKey;
   const { v, r, s } = signingKey().signDigest(typeDataHash);
   // 3. Send Signed Transaction
-  const anySender = entity3;
-  const Artifact = await ethers.getContractFactory(artifactName, anySender);
-  const contractInstance = Artifact.attach(verificationRegistryAddress);
-
-  const result = await contractInstance.addDidRegistrySigned(
+  const result = await contractInstance.changeDidRegistrySigned(
     didRegistryAddress,
     nonce,
     v,
@@ -1471,30 +1798,38 @@ async function addDidRegistrySigned(
   await result.wait();
   await expect(result)
     .to.emit(contractInstance, "DidRegistryChange")
-    .withArgs(organization.address, didRegistryAddress, true);
+    .withArgs(organization.address, oldDidRegistry, didRegistryAddress);
+  const updatedNonce = (
+    await contractInstance.getDidRegistry(organization.address)
+  ).nonce;
+
+  expect(updatedNonce).to.equal(nonce.add(1));
+
   return { v, r, s, nonce };
 }
 
-async function removeDidRegistrySigned(
-  didRegistryAddress: string,
-  organization: Wallet
-) {
-  const randonNonceSeed = randomUUID();
-  const nonce = keccak256(toUtf8Bytes(randonNonceSeed));
+async function removeDidRegistrySigned(organization: Wallet) {
+  const anySender = entity3;
+  const Artifact = await ethers.getContractFactory(artifactName, anySender);
+  const contractInstance = Artifact.attach(verificationRegistryAddress);
+  const initialState = await contractInstance.didRegistries(
+    organization.address
+  );
+  const nonce = initialState.nonce;
   const { typeDataHash } = await getTypedDataHashForRemoveDidRegistry(nonce);
   // sign type data hash
   const signingKey = organization._signingKey;
   const { v, r, s } = signingKey().signDigest(typeDataHash);
   // 3. Send Signed Transaction
-  const anySender = entity3;
-  const Artifact = await ethers.getContractFactory(artifactName, anySender);
-  const contractInstance = Artifact.attach(verificationRegistryAddress);
-
   const result = await contractInstance.removeDidRegistrySigned(nonce, v, r, s);
   await result.wait();
   await expect(result)
     .to.emit(contractInstance, "DidRegistryChange")
-    .withArgs(organization.address, didRegistryAddress, false);
+    .withArgs(
+      organization.address,
+      initialState.didRegistry,
+      ethers.constants.AddressZero
+    );
   return { v, r, s, nonce };
 }
 
@@ -1502,8 +1837,14 @@ async function addDelegateTypeSigned(
   customDelegateType: string,
   organization: Wallet
 ) {
-  const randonNonceSeed = randomUUID();
-  const nonce = keccak256(toUtf8Bytes(randonNonceSeed));
+  const anySender = entity3;
+  const Artifact = await ethers.getContractFactory(artifactName, anySender);
+  const contractInstance = Artifact.attach(verificationRegistryAddress);
+  const delegateTypeDetails = await contractInstance.didDelegateTypes(
+    organization.address,
+    customDelegateType
+  );
+  const nonce = delegateTypeDetails.nonce;
   const { typeDataHash } = await getTypedDataHashForAddDelegateType(
     customDelegateType,
     nonce
@@ -1512,10 +1853,6 @@ async function addDelegateTypeSigned(
   const signingKey = organization._signingKey;
   const { v, r, s } = signingKey().signDigest(typeDataHash);
   // 3. Send Signed Transaction
-  const anySender = entity3;
-  const Artifact = await ethers.getContractFactory(artifactName, anySender);
-  const contractInstance = Artifact.attach(verificationRegistryAddress);
-
   const result = await contractInstance.addDelegateTypeSigned(
     customDelegateType,
     nonce,
@@ -1535,8 +1872,15 @@ async function removeDelegateTypeSigned(
   customDelegateType: string,
   organization: Wallet
 ) {
-  const randonNonceSeed = randomUUID();
-  const nonce = keccak256(toUtf8Bytes(randonNonceSeed));
+  const anySender = entity3;
+  const Artifact = await ethers.getContractFactory(artifactName, anySender);
+  const contractInstance = Artifact.attach(verificationRegistryAddress);
+  const delegateTypeDetails = await contractInstance.didDelegateTypes(
+    organization.address,
+    customDelegateType
+  );
+  const nonce = delegateTypeDetails.nonce;
+
   const { typeDataHash } = await getTypedDataHashForRemoveDelegateType(
     customDelegateType,
     nonce
@@ -1545,10 +1889,6 @@ async function removeDelegateTypeSigned(
   const signingKey = organization._signingKey;
   const { v, r, s } = signingKey().signDigest(typeDataHash);
   // 3. Send Signed Transaction
-  const anySender = entity3;
-  const Artifact = await ethers.getContractFactory(artifactName, anySender);
-  const contractInstance = Artifact.attach(verificationRegistryAddress);
-
   const result = await contractInstance.removeDelegateTypeSigned(
     customDelegateType,
     nonce,
@@ -1568,7 +1908,7 @@ async function addOnHoldSigned(
   message = genericMessage,
   organization: Wallet,
   status: boolean,
-  nonce = keccak256(toUtf8Bytes(randomUUID()))
+  nonce: number
 ) {
   const digest = keccak256(toUtf8Bytes(message));
   const { typeDataHash } = await getTypedDataHashForOnHoldType(
@@ -1601,7 +1941,7 @@ async function addOnHoldSigned(
     .withArgs(digest, organization.address, status, anyValue);
   const q = await contractInstance.getDetails(organization.address, digest);
   expect(q.onHold).to.equal(status);
-
+  expect(q.nonce).to.equal(nonce + 1);
   return { v, r, s, nonce };
 }
 
@@ -1609,10 +1949,17 @@ async function addOnHoldByDelegateSigned(
   message = genericMessage,
   organizationAddress: string,
   status: boolean,
-  delegate: Wallet,
-  nonce = keccak256(toUtf8Bytes(randomUUID()))
+  delegate: Wallet
 ) {
   const digest = keccak256(toUtf8Bytes(message));
+  const anySender = entity3;
+  const Artifact = await ethers.getContractFactory(artifactName, anySender);
+  const contractInstance = Artifact.attach(verificationRegistryAddress);
+  const digestDetails = await contractInstance.getDetails(
+    organizationAddress,
+    digest
+  );
+  const nonce = digestDetails.nonce;
   const { typeDataHash } = await getTypedDataHashForOnHoldType(
     digest,
     organizationAddress,
@@ -1623,10 +1970,6 @@ async function addOnHoldByDelegateSigned(
   const signingKey = delegate._signingKey;
   const { v, r, s } = signingKey().signDigest(typeDataHash);
   // 3. Send Signed Transaction
-  const anySender = entity3;
-  const Artifact = await ethers.getContractFactory(artifactName, anySender);
-  const contractInstance = Artifact.attach(verificationRegistryAddress);
-
   const result = await contractInstance.onHoldByDelegateSigned(
     digest,
     organizationAddress,
@@ -1643,6 +1986,60 @@ async function addOnHoldByDelegateSigned(
     .withArgs(digest, organizationAddress, status, anyValue);
   const q = await contractInstance.getDetails(organizationAddress, digest);
   expect(q.onHold).to.equal(status);
+  expect(q.nonce).to.equal(nonce.add(1));
+
+  return { v, r, s, nonce };
+}
+
+async function updateByDelegateSigned(
+  message = genericMessage,
+  organizationAddress: string,
+  delegate: Wallet,
+  delta = 3600 * 24 * 365,
+  chainId = network.config.chainId
+) {
+  const _digest = keccak256(toUtf8Bytes(message));
+  const anySender = entity3;
+  const Artifact = await ethers.getContractFactory(artifactName, anySender);
+  const contractInstance = Artifact.attach(verificationRegistryAddress);
+  const digestDetails = await contractInstance.getDetails(
+    organizationAddress,
+    _digest
+  );
+
+  const nonce = digestDetails.nonce;
+  const { typeDataHash, digest, exp } = await getTypedDataHashForUpdate(
+    organizationAddress,
+    nonce,
+    EIP712ContractName,
+    message,
+    delta,
+    chainId
+  );
+
+  // sign type data hash
+  const signingKey = delegate._signingKey;
+  const { v, r, s } = signingKey().signDigest(typeDataHash);
+  // 3. Send Signed Transaction
+  const result = await contractInstance.updateByDelegateSigned(
+    digest,
+    exp,
+    organizationAddress,
+    nonce,
+    v,
+    r,
+    s
+  );
+  await result.wait();
+
+  await expect(result)
+    .to.emit(contractInstance, "NewUpdate")
+    .withArgs(digest, organizationAddress, exp);
+
+  const q = await contractInstance.getDetails(organizationAddress, digest);
+  expect(q.exp).to.equal(exp);
+  expect(q.onHold).to.equal(false);
+  expect(q.nonce).to.equal(nonce.add(1));
 
   return { v, r, s, nonce };
 }
@@ -1652,32 +2049,35 @@ async function addOnHoldByDelegateWithCustomTypeSigned(
   message = genericMessage,
   organizationAddress: string,
   status: boolean,
-  delegate: Wallet,
-  nonce = keccak256(toUtf8Bytes(randomUUID()))
+  delegate: Wallet
 ) {
+  const anySender = entity3;
+  const Artifact = await ethers.getContractFactory(artifactName, anySender);
+  const contractInstance = Artifact.attach(verificationRegistryAddress);
   const digest = keccak256(toUtf8Bytes(message));
+  const initialState = await contractInstance.getDetails(
+    organizationAddress,
+    digest
+  );
   const { typeDataHash } =
     await getTypedDataHashForOnHoldWithCustomTypeOfDelegate_Type(
       digest,
       organizationAddress,
       status,
-      nonce,
+      initialState.nonce,
       customDelegateType
     );
   // sign type data hash
   const signingKey = delegate._signingKey;
   const { v, r, s } = signingKey().signDigest(typeDataHash);
   // 3. Send Signed Transaction
-  const anySender = entity3;
-  const Artifact = await ethers.getContractFactory(artifactName, anySender);
-  const contractInstance = Artifact.attach(verificationRegistryAddress);
 
   const result = await contractInstance.onHoldByDelegateWithCustomTypeSigned(
     customDelegateType,
     organizationAddress,
     digest,
     status,
-    nonce,
+    initialState.nonce,
     v,
     r,
     s
@@ -1690,5 +2090,57 @@ async function addOnHoldByDelegateWithCustomTypeSigned(
   const q = await contractInstance.getDetails(organizationAddress, digest);
   expect(q.onHold).to.equal(status);
 
+  const nonce = initialState.nonce;
   return { v, r, s, nonce };
+}
+
+async function updateByDelegateWithCustomTypeSigned(
+  customDelegateType: string,
+  message = genericMessage,
+  organizationAddress: string,
+  delegate: Wallet,
+  delta = 3600 * 24 * 365
+) {
+  const anySender = entity3;
+  const Artifact = await ethers.getContractFactory(artifactName, anySender);
+  const contractInstance = Artifact.attach(verificationRegistryAddress);
+  const digest = keccak256(toUtf8Bytes(message));
+  const initialState = await contractInstance.getDetails(
+    organizationAddress,
+    digest
+  );
+  const nonce = initialState.nonce;
+  const { typeDataHash, exp } =
+    await getTypedDataHashForUpdateWithCustomTypeOfDelegate_Type(
+      organizationAddress,
+      nonce,
+      message,
+      delta,
+      customDelegateType
+    );
+  // sign type data hash
+  const signingKey = delegate._signingKey;
+  const { v, r, s } = signingKey().signDigest(typeDataHash);
+  // 3. Send Signed Transaction
+
+  const result = await contractInstance.updateByDelegateWithCustomTypeSigned(
+    customDelegateType,
+    digest,
+    exp,
+    organizationAddress,
+    initialState.nonce,
+    v,
+    r,
+    s
+  );
+  await result.wait();
+
+  await expect(result)
+    .to.emit(contractInstance, "NewUpdate")
+    .withArgs(digest, organizationAddress, exp);
+  const q = await contractInstance.getDetails(organizationAddress, digest);
+  expect(q.exp).to.equal(exp);
+  expect(q.onHold).to.equal(false);
+  expect(q.nonce).to.equal(nonce.add(1));
+  return { v, r, s };
 }

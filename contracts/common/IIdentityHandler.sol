@@ -8,11 +8,11 @@ pragma solidity 0.8.18;
  */
 interface IIdentityHandler {
     /**
-     * @dev Every entity is able to just add one didRegistry (address).
+     * @dev Every entity is able to just add one didRegistry (address) or update it.
      * Main identity is the only that that can add a didRegistry only valid for him
      * By adding a didRegistry tied to a entity the verification about delegates goes always through that contract
      */
-    function addDidRegistry(address didRegistryAddress) external;
+    function changeDidRegistry(address didRegistryAddress) external;
 
     /**
      * @dev removes the custom didRegistry if exists otherwise reverts
@@ -24,7 +24,7 @@ interface IIdentityHandler {
      */
     function getDidRegistry(
         address identity
-    ) external view returns (address didRegistryAddress);
+    ) external view returns (DidRegistryDetails memory didRegistryDetails);
 
     /**
      * @dev Associates a delegate type with an entity. The intention is to allow just that kind of delegates to perform actions
@@ -60,7 +60,27 @@ interface IIdentityHandler {
      */
     event DidRegistryChange(
         address indexed by,
-        address indexed didRegistry,
-        bool status
+        address indexed oldDidRegistry,
+        address indexed newDidRegistry
     );
+
+    /**
+     * @dev Keeps track of a custo DID registry, in case an actor wants to use a different one rather than the default DID Registry
+     * @param didRegistry The custom Did registry
+     * @param nonce An incrementing value that follows every state change
+     */
+    struct DidRegistryDetails {
+        address didRegistry;
+        uint64 nonce;
+    }
+
+    /**
+     * @dev A struct to keep track of custom delegate types
+     * @param status Indicating whether a particuar delegate type is set or not for a given actor
+     * @param nonce An incrementing value that follows every state change
+     */
+    struct DelegateTypeState {
+        bool status;
+        uint64 nonce;
+    }
 }

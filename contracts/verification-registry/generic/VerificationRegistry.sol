@@ -19,7 +19,7 @@ contract VerificationRegistry is IVerificationRegistry, IdentityHandler {
         )
     {}
 
-    string public constant version = "010"; // max value MUST BE 0xffff
+    string public constant version = "011"; // max value MUST BE 0xffff
     mapping(bytes32 => mapping(address => Detail)) private registers;
     bytes32 private constant REVOKE_TYPEHASH =
         keccak256("Revoke(bytes32 digest,address identity)");
@@ -27,16 +27,28 @@ contract VerificationRegistry is IVerificationRegistry, IdentityHandler {
         keccak256("Issue(bytes32 digest,uint256 exp,address identity)");
     bytes32 private constant ONHOLD_TYPEHASH =
         keccak256(
-            "OnHold(bytes32 digest,address identity,bool onHoldStatus,bytes32 nonce)"
+            "OnHold(bytes32 digest,address identity,bool onHoldStatus,uint64 nonce)"
         );
 
     bytes32 private constant ONHOLD_WITH_CUSTOM_DELEGATE_TYPE_TYPEHASH =
         keccak256(
-            "OnHoldByDelegateWithCustomType(bytes32 digest,address identity,bool onHoldStatus,bytes32 nonce,bytes32 delegateType)"
+            "OnHoldByDelegateWithCustomType(bytes32 digest,address identity,bool onHoldStatus,uint64 nonce,bytes32 delegateType)"
+        );
+    bytes32 private constant UPDATE_TYPEHASH =
+        keccak256(
+            "Update(bytes32 digest,uint256 exp,address identity,uint64 nonce)"
+        );
+    bytes32 private constant UPDATE_WITH_CUSTOM_DELEGATE_TYPE_TYPEHASH =
+        keccak256(
+            "UpdateByDelegateWithCustomType(bytes32 digest,uint256 exp,address identity,uint64 nonce,bytes32 delegateType)"
         );
 
     function issue(bytes32 digest, uint256 exp, address identity) external {
-        _validateController(getDidRegistry(identity), _msgSender(), identity);
+        _validateController(
+            getDidRegistry(identity).didRegistry,
+            _msgSender(),
+            identity
+        );
         _issue(identity, digest, exp);
     }
 
@@ -45,6 +57,7 @@ contract VerificationRegistry is IVerificationRegistry, IdentityHandler {
         require(detail.iat == 0 && detail.exp == 0, "RAE");
         uint256 iat = block.timestamp;
         detail.iat = iat;
+        detail.nonce++;
         if (exp > 0) {
             require(exp > block.timestamp, "IET");
             // just skipping exp if zero, to save gas
@@ -56,23 +69,245 @@ contract VerificationRegistry is IVerificationRegistry, IdentityHandler {
     }
 
     function update(bytes32 digest, uint256 exp, address identity) external {
-        _validateController(getDidRegistry(identity), _msgSender(), identity);
+        _validateController(
+            getDidRegistry(identity).didRegistry,
+            _msgSender(),
+            identity
+        );
         _update(digest, exp, identity);
     }
 
+    function updateSigned(
+        bytes32 digest,
+        uint256 exp,
+        address identity,
+        uint64 nonce,
+        uint8 sigV,
+        bytes32 sigR,
+        bytes32 sigS
+    ) external {
+        bytes memory message = abi.encode(
+            UPDATE_TYPEHASH,
+            digest,
+            exp,
+            identity,
+            nonce
+        );
+        bytes32 structHash = keccak256(message);
+        bytes32 completeHash = _hashTypedDataV4(structHash);
+        address didRegistry = getDidRegistry(identity).didRegistry;
+        checkControllerSignature(
+            didRegistry,
+            identity,
+            sigV,
+            sigR,
+            sigS,
+            completeHash
+        );
+        _updateWithNonce(digest, exp, identity, nonce);
+    }
+
+    function updateByDelegate(
+        bytes32 digest,
+        uint256 exp,
+        address identity
+    ) external {
+        // resolve didRegistry to call
+        address registryAddress = getDidRegistry(identity).didRegistry;
+
+        _validateDelegate(
+            registryAddress,
+            identity,
+            defaultDelegateType,
+            _msgSender()
+        );
+        _update(digest, exp, identity);
+    }
+
+    function updateByDelegateSigned(
+        bytes32 digest,
+        uint256 exp,
+        address identity,
+        uint64 nonce,
+        uint8 sigV,
+        bytes32 sigR,
+        bytes32 sigS
+    ) external {
+        bytes32 delegateType = _getDefaultDelegateType();
+        _updateByDelegateSigned(
+            delegateType,
+            digest,
+            exp,
+            identity,
+            nonce,
+            sigV,
+            sigR,
+            sigS
+        );
+    }
+
+    function _updateByDelegateSigned(
+        bytes32 delegateType,
+        bytes32 digest,
+        uint256 exp,
+        address identity,
+        uint64 nonce,
+        uint8 sigV,
+        bytes32 sigR,
+        bytes32 sigS
+    ) private {
+        bytes memory message = abi.encode(
+            UPDATE_TYPEHASH,
+            digest,
+            exp,
+            identity,
+            nonce
+        );
+        __updateByDelegateSigned(
+            delegateType,
+            digest,
+            exp,
+            identity,
+            message,
+            nonce,
+            sigV,
+            sigR,
+            sigS
+        );
+    }
+
+    function updateByDelegateWithCustomType(
+        bytes32 delegateType,
+        bytes32 digest,
+        uint256 exp,
+        address identity
+    ) external {
+        _validateDelegateWithCustomType(delegateType, identity, _msgSender());
+        _update(digest, exp, identity);
+    }
+
+    function updateByDelegateWithCustomTypeSigned(
+        bytes32 delegateType,
+        bytes32 digest,
+        uint256 exp,
+        address identity,
+        uint64 nonce,
+        uint8 sigV,
+        bytes32 sigR,
+        bytes32 sigS
+    ) external {
+        _updateByDelegateWithCustomTypeSigned(
+            delegateType,
+            digest,
+            exp,
+            identity,
+            nonce,
+            sigV,
+            sigR,
+            sigS
+        );
+    }
+
+    function _updateByDelegateWithCustomTypeSigned(
+        bytes32 delegateType,
+        bytes32 digest,
+        uint256 exp,
+        address identity,
+        uint64 nonce,
+        uint8 sigV,
+        bytes32 sigR,
+        bytes32 sigS
+    ) private {
+        bytes memory message = abi.encode(
+            UPDATE_WITH_CUSTOM_DELEGATE_TYPE_TYPEHASH,
+            digest,
+            exp,
+            identity,
+            nonce,
+            delegateType
+        );
+        __updateByDelegateSigned(
+            delegateType,
+            digest,
+            exp,
+            identity,
+            message,
+            nonce,
+            sigV,
+            sigR,
+            sigS
+        );
+    }
+
+    function __updateByDelegateSigned(
+        bytes32 delegateType,
+        bytes32 digest,
+        uint256 exp,
+        address identity,
+        bytes memory message,
+        uint64 nonce,
+        uint8 sigV,
+        bytes32 sigR,
+        bytes32 sigS
+    ) private {
+        bytes32 structHash = keccak256(message);
+        bytes32 completeHash = _hashTypedDataV4(structHash);
+
+        bytes32 dt = delegateType; // avoid stack too deep
+
+        address didRegistry = getDidRegistry(identity).didRegistry;
+        checkDelegateSignature(
+            didRegistry,
+            identity,
+            sigV,
+            sigR,
+            sigS,
+            completeHash,
+            dt
+        );
+        _updateWithNonce(digest, exp, identity, nonce);
+    }
+
     function _update(bytes32 digest, uint256 exp, address by) private {
-        Detail memory detail = registers[digest][by];
+        Detail storage detail = registers[digest][by];
+        uint64 nonce = detail.nonce;
+        _updateWithNonceAndData(digest, exp, by, nonce, detail);
+    }
+
+    function _updateWithNonce(
+        bytes32 digest,
+        uint256 exp,
+        address by,
+        uint64 nonce
+    ) private {
+        Detail storage detail = registers[digest][by];
+        _updateWithNonceAndData(digest, exp, by, nonce, detail);
+    }
+
+    function _updateWithNonceAndData(
+        bytes32 digest,
+        uint256 exp,
+        address by,
+        uint64 nonce,
+        Detail storage detail
+    ) private {
+        _validateNonce(nonce, detail.nonce);
         require(!(detail.exp < block.timestamp && detail.exp != 0), "ER"); // not expiration check
         require(detail.iat > 0, "RNIBE"); // must be issued check
         if (exp != detail.exp) {
             // just skipping exp if zero, to save gas
             detail.exp = exp;
         }
+        detail.nonce++;
         emit NewUpdate(digest, by, exp);
     }
 
     function revoke(bytes32 digest, address identity) external {
-        _validateController(getDidRegistry(identity), _msgSender(), identity);
+        _validateController(
+            getDidRegistry(identity).didRegistry,
+            _msgSender(),
+            identity
+        );
         _revoke(_msgSender(), digest);
     }
 
@@ -81,8 +316,23 @@ contract VerificationRegistry is IVerificationRegistry, IdentityHandler {
         address identity,
         bool onHoldStatus
     ) external {
-        _validateController(getDidRegistry(identity), _msgSender(), identity);
-        _onHoldChange(_msgSender(), digest, onHoldStatus);
+        _validateController(
+            getDidRegistry(identity).didRegistry,
+            _msgSender(),
+            identity
+        );
+        _onHoldChange(identity, digest, onHoldStatus);
+    }
+
+    function _onHoldChangeWithNonceManagement(
+        address by,
+        bytes32 digest,
+        bool onHoldStatus,
+        uint64 nonce
+    ) private {
+        Detail storage detail = registers[digest][by];
+        _validateNonce(nonce, detail.nonce);
+        _onHoldChangeCore(by, digest, onHoldStatus, detail);
     }
 
     function _onHoldChange(
@@ -90,11 +340,21 @@ contract VerificationRegistry is IVerificationRegistry, IdentityHandler {
         bytes32 digest,
         bool onHoldStatus
     ) private {
-        uint256 currentTime = block.timestamp;
         Detail storage detail = registers[digest][by];
+        _onHoldChangeCore(by, digest, onHoldStatus, detail);
+    }
+
+    function _onHoldChangeCore(
+        address by,
+        bytes32 digest,
+        bool onHoldStatus,
+        Detail storage detail
+    ) private {
+        uint256 currentTime = block.timestamp;
         require(detail.exp > currentTime || detail.exp == 0, "ER");
         require(detail.onHold != onHoldStatus, "IOHCS");
         detail.onHold = onHoldStatus;
+        detail.nonce++;
         emit NewOnHoldChange(digest, by, onHoldStatus, currentTime);
     }
 
@@ -102,7 +362,7 @@ contract VerificationRegistry is IVerificationRegistry, IdentityHandler {
         bytes32 digest,
         address identity,
         bool onHoldStatus,
-        bytes32 nonce,
+        uint64 nonce,
         uint8 sigV,
         bytes32 sigR,
         bytes32 sigS
@@ -116,7 +376,7 @@ contract VerificationRegistry is IVerificationRegistry, IdentityHandler {
         );
         bytes32 structHash = keccak256(message);
         bytes32 completeHash = _hashTypedDataV4(structHash);
-        address didRegistry = getDidRegistry(identity);
+        address didRegistry = getDidRegistry(identity).didRegistry;
         checkControllerSignature(
             didRegistry,
             identity,
@@ -125,8 +385,7 @@ contract VerificationRegistry is IVerificationRegistry, IdentityHandler {
             sigS,
             completeHash
         );
-        _onHoldChange(identity, digest, onHoldStatus);
-        _validateAndSetNonce(identity, nonce);
+        _onHoldChangeWithNonceManagement(identity, digest, onHoldStatus, nonce);
     }
 
     function _revoke(address by, bytes32 digest) private {
@@ -138,6 +397,7 @@ contract VerificationRegistry is IVerificationRegistry, IdentityHandler {
         if (detail.onHold) {
             detail.onHold = false;
         }
+        detail.nonce++;
         emit NewRevocation(digest, by, detail.iat, exp);
     }
 
@@ -147,13 +407,20 @@ contract VerificationRegistry is IVerificationRegistry, IdentityHandler {
     )
         external
         view
-        returns (uint256 iat, uint256 exp, bool onHold, bool isRevoked)
+        returns (
+            uint256 iat,
+            uint256 exp,
+            bool onHold,
+            bool isRevoked,
+            uint64 nonce
+        )
     {
         Detail memory detail = registers[digest][issuer];
         iat = detail.iat;
         exp = detail.exp;
         onHold = detail.onHold;
         isRevoked = detail.isRevoked;
+        nonce = detail.nonce;
     }
 
     function issueByDelegate(
@@ -162,7 +429,7 @@ contract VerificationRegistry is IVerificationRegistry, IdentityHandler {
         uint256 exp
     ) external {
         // resolve didRegistry to call
-        address registryAddress = getDidRegistry(identity);
+        address registryAddress = getDidRegistry(identity).didRegistry;
 
         _validateDelegate(
             registryAddress,
@@ -199,7 +466,7 @@ contract VerificationRegistry is IVerificationRegistry, IdentityHandler {
         );
         bytes32 structHash = keccak256(message);
         bytes32 completeHash = _hashTypedDataV4(structHash);
-        address didRegistry = getDidRegistry(identity);
+        address didRegistry = getDidRegistry(identity).didRegistry;
         checkControllerSignature(
             didRegistry,
             identity,
@@ -272,7 +539,7 @@ contract VerificationRegistry is IVerificationRegistry, IdentityHandler {
 
         bytes32 dt = delegateType; // avoid stack too deep
 
-        address didRegistry = getDidRegistry(identity);
+        address didRegistry = getDidRegistry(identity).didRegistry;
         checkDelegateSignature(
             didRegistry,
             identity,
@@ -295,7 +562,7 @@ contract VerificationRegistry is IVerificationRegistry, IdentityHandler {
         bytes memory message = abi.encode(REVOKE_TYPEHASH, digest, identity);
         bytes32 structHash = keccak256(message);
         bytes32 completeHash = _hashTypedDataV4(structHash); // hash of: business data,contract name, eip712 version, address this, chainId, eip712 signature and salt
-        address didRegistry = getDidRegistry(identity);
+        address didRegistry = getDidRegistry(identity).didRegistry;
         checkControllerSignature(
             didRegistry,
             identity,
@@ -308,7 +575,7 @@ contract VerificationRegistry is IVerificationRegistry, IdentityHandler {
     }
 
     function revokeByDelegate(address identity, bytes32 digest) external {
-        address registryAddress = getDidRegistry(identity);
+        address registryAddress = getDidRegistry(identity).didRegistry;
         _validateDelegate(
             registryAddress,
             identity,
@@ -359,7 +626,7 @@ contract VerificationRegistry is IVerificationRegistry, IdentityHandler {
 
         bytes32 dt = delegateType; // avoid stack too deep
 
-        address didRegistry = getDidRegistry(identity);
+        address didRegistry = getDidRegistry(identity).didRegistry;
         checkDelegateSignature(
             didRegistry,
             identity,
@@ -397,7 +664,7 @@ contract VerificationRegistry is IVerificationRegistry, IdentityHandler {
         bool onHoldStatus
     ) external {
         // resolve didRegistry to call
-        address registryAddress = getDidRegistry(identity);
+        address registryAddress = getDidRegistry(identity).didRegistry;
         _validateDelegate(
             registryAddress,
             identity,
@@ -411,7 +678,7 @@ contract VerificationRegistry is IVerificationRegistry, IdentityHandler {
         bytes32 digest,
         address identity,
         bool onHoldStatus,
-        bytes32 nonce,
+        uint64 nonce,
         uint8 sigV,
         bytes32 sigR,
         bytes32 sigS
@@ -434,7 +701,7 @@ contract VerificationRegistry is IVerificationRegistry, IdentityHandler {
         address identity,
         bytes32 digest,
         bool onHoldStatus,
-        bytes32 nonce,
+        uint64 nonce,
         uint8 sigV,
         bytes32 sigR,
         bytes32 sigS
@@ -452,6 +719,7 @@ contract VerificationRegistry is IVerificationRegistry, IdentityHandler {
             digest,
             onHoldStatus,
             message,
+            nonce,
             sigV,
             sigR,
             sigS
@@ -463,7 +731,7 @@ contract VerificationRegistry is IVerificationRegistry, IdentityHandler {
         address identity,
         bytes32 digest,
         bool onHoldStatus,
-        bytes32 nonce,
+        uint64 nonce,
         uint8 sigV,
         bytes32 sigR,
         bytes32 sigS
@@ -482,6 +750,7 @@ contract VerificationRegistry is IVerificationRegistry, IdentityHandler {
             digest,
             onHoldStatus,
             message,
+            nonce,
             sigV,
             sigR,
             sigS
@@ -494,6 +763,7 @@ contract VerificationRegistry is IVerificationRegistry, IdentityHandler {
         bytes32 digest,
         bool onHoldStatus,
         bytes memory message,
+        uint64 nonce,
         uint8 sigV,
         bytes32 sigR,
         bytes32 sigS
@@ -503,7 +773,7 @@ contract VerificationRegistry is IVerificationRegistry, IdentityHandler {
 
         bytes32 dt = delegateType; // avoid stack too deep
 
-        address didRegistry = getDidRegistry(identity);
+        address didRegistry = getDidRegistry(identity).didRegistry;
         checkDelegateSignature(
             didRegistry,
             identity,
@@ -513,7 +783,7 @@ contract VerificationRegistry is IVerificationRegistry, IdentityHandler {
             completeHash,
             dt
         );
-        _onHoldChange(identity, digest, onHoldStatus);
+        _onHoldChangeWithNonceManagement(identity, digest, onHoldStatus, nonce);
     }
 
     function onHoldByDelegateWithCustomType(
@@ -531,7 +801,7 @@ contract VerificationRegistry is IVerificationRegistry, IdentityHandler {
         address identity,
         bytes32 digest,
         bool onHoldStatus,
-        bytes32 nonce,
+        uint64 nonce,
         uint8 sigV,
         bytes32 sigR,
         bytes32 sigS

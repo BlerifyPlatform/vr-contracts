@@ -8,21 +8,21 @@ import "@openzeppelin/contracts/utils/Context.sol";
 abstract contract IdentityHandler is IIdentityHandler, Context, EIP712 {
     bytes32 public defaultDelegateType;
     address public defaultDidRegistry;
-    mapping(address => address) public didRegistries;
+    mapping(address => DidRegistryDetails) public didRegistries;
     // identity => delegateType => bool
-    mapping(address => mapping(bytes32 => bool)) public didDelegateTypes;
-    mapping(address => mapping(bytes32 => bool)) public nonces;
+    mapping(address => mapping(bytes32 => DelegateTypeState))
+        public didDelegateTypes;
     bytes32 private constant ADD_DID_REGISTRY_TYPEHASH =
-        keccak256("AddDidRegistry(address didRegistryAddress,bytes32 nonce)");
+        keccak256("ChangeDidRegistry(address didRegistryAddress,uint64 nonce)");
 
     bytes32 private constant REMOVE_DID_REGISTRY_TYPEHASH =
-        keccak256("RemoveDidRegistry(bytes32 nonce)");
+        keccak256("RemoveDidRegistry(uint64 nonce)");
 
     bytes32 private constant ADD_DELETEGATE_TYPE_TYPEHASH =
-        keccak256("AddDelegateType(bytes32 delegateType,bytes32 nonce)");
+        keccak256("AddDelegateType(bytes32 delegateType,uint64 nonce)");
 
     bytes32 private constant REMOVE_DELETEGATE_TYPE_TYPEHASH =
-        keccak256("RemoveDelegateType(bytes32 delegateType,bytes32 nonce)");
+        keccak256("RemoveDelegateType(bytes32 delegateType,uint64 nonce)");
 
     constructor(
         address didRegistry,
@@ -70,35 +70,70 @@ abstract contract IdentityHandler is IIdentityHandler, Context, EIP712 {
         return delegate;
     }
 
-    function getDidRegistry(address identity) public view returns (address) {
-        address registryAddress = didRegistries[identity];
+    function getDidRegistry(
+        address identity
+    ) public view returns (DidRegistryDetails memory didRegistryDetails) {
+        didRegistryDetails = didRegistries[identity];
+        address registryAddress = didRegistryDetails.didRegistry;
         if (registryAddress == address(0)) {
-            return defaultDidRegistry;
+            didRegistryDetails.didRegistry = defaultDidRegistry;
         }
-        return registryAddress;
     }
 
-    function addDidRegistry(address didRegistryAddress) external {
-        _addDidRegistry(didRegistryAddress, _msgSender());
+    function changeDidRegistry(address didRegistryAddress) external {
+        _changeDidRegistry(didRegistryAddress, _msgSender());
     }
 
-    function _addDidRegistry(
+    function _changeDidRegistryWithNonce(
+        address didRegistryAddress,
+        address actor,
+        uint64 nonce
+    ) internal {
+        DidRegistryDetails storage details = didRegistries[actor];
+        _changeDidRegistryWithNonceAndData(
+            didRegistryAddress,
+            actor,
+            nonce,
+            details
+        );
+    }
+
+    function _changeDidRegistryWithNonceAndData(
+        address didRegistryAddress,
+        address actor,
+        uint64 nonce,
+        DidRegistryDetails storage details
+    ) internal {
+        // @todo add extcodesize and function selector verification
+        _validateNonce(nonce, details.nonce);
+        require(
+            didRegistryAddress != address(0) &&
+                didRegistries[actor].didRegistry != didRegistryAddress,
+            "IDR"
+        );
+        address oldDidRegistry = details.didRegistry;
+        details.didRegistry = didRegistryAddress;
+        details.nonce++;
+        emit DidRegistryChange(actor, oldDidRegistry, didRegistryAddress);
+    }
+
+    function _changeDidRegistry(
         address didRegistryAddress,
         address actor
     ) internal {
-        // @todo add extcodesize and function selector verification
-        require(
-            didRegistryAddress != address(0) &&
-                didRegistries[actor] == address(0),
-            "IP"
+        DidRegistryDetails storage details = didRegistries[actor];
+        uint64 nonce = details.nonce;
+        _changeDidRegistryWithNonceAndData(
+            didRegistryAddress,
+            actor,
+            nonce,
+            details
         );
-        didRegistries[actor] = didRegistryAddress;
-        emit DidRegistryChange(actor, didRegistryAddress, true);
     }
 
-    function addDidRegistrySigned(
+    function changeDidRegistrySigned(
         address didRegistryAddress,
-        bytes32 nonce,
+        uint64 nonce,
         uint8 sigV,
         bytes32 sigR,
         bytes32 sigS
@@ -111,13 +146,7 @@ abstract contract IdentityHandler is IIdentityHandler, Context, EIP712 {
         bytes32 structHash = keccak256(message);
         bytes32 completeHash = _hashTypedDataV4(structHash);
         address actor = ecrecover(completeHash, sigV, sigR, sigS);
-        _validateAndSetNonce(actor, nonce);
-        _addDidRegistry(didRegistryAddress, actor);
-    }
-
-    function _validateAndSetNonce(address actor, bytes32 nonce) internal {
-        require(!nonces[actor][nonce], "NAR");
-        nonces[actor][nonce] = true;
+        _changeDidRegistryWithNonce(didRegistryAddress, actor, nonce);
     }
 
     function removeDidRegistry() external {
@@ -126,14 +155,36 @@ abstract contract IdentityHandler is IIdentityHandler, Context, EIP712 {
 
     function _removeDidRegistry(address actor) internal {
         // @todo add extcodesize and function selector verification
-        address didRegistryAddress = didRegistries[actor];
-        require(didRegistries[actor] != address(0), "CDNS");
-        didRegistries[actor] = address(0);
-        emit DidRegistryChange(actor, didRegistryAddress, false);
+        DidRegistryDetails storage didRegistryDetails = didRegistries[actor];
+        _removeDidRegistryWithNonceAndData(
+            actor,
+            didRegistryDetails.nonce,
+            didRegistryDetails
+        );
+    }
+
+    function _removeDidRegistryWithNonce(address actor, uint64 nonce) internal {
+        // @todo add extcodesize and function selector verification
+        DidRegistryDetails storage didRegistryDetails = didRegistries[actor];
+        _removeDidRegistryWithNonceAndData(actor, nonce, didRegistryDetails);
+    }
+
+    function _removeDidRegistryWithNonceAndData(
+        address actor,
+        uint64 nonce,
+        DidRegistryDetails storage didRegistryDetails
+    ) internal {
+        // @todo add extcodesize and function selector verification
+        _validateNonce(nonce, didRegistryDetails.nonce);
+        address didRegistryAddress = didRegistryDetails.didRegistry;
+        require(didRegistryAddress != address(0), "CDNS");
+        didRegistryDetails.didRegistry = address(0);
+        didRegistryDetails.nonce++;
+        emit DidRegistryChange(actor, didRegistryAddress, address(0));
     }
 
     function removeDidRegistrySigned(
-        bytes32 nonce,
+        uint64 nonce,
         uint8 sigV,
         bytes32 sigR,
         bytes32 sigS
@@ -142,8 +193,7 @@ abstract contract IdentityHandler is IIdentityHandler, Context, EIP712 {
         bytes32 structHash = keccak256(message);
         bytes32 completeHash = _hashTypedDataV4(structHash);
         address actor = ecrecover(completeHash, sigV, sigR, sigS);
-        _validateAndSetNonce(actor, nonce);
-        _removeDidRegistry(actor);
+        _removeDidRegistryWithNonce(actor, nonce);
     }
 
     function _validateDelegate(
@@ -182,7 +232,7 @@ abstract contract IdentityHandler is IIdentityHandler, Context, EIP712 {
         address delegate
     ) internal view {
         // resolve didRegistry to call
-        address registryAddress = getDidRegistry(identity);
+        address registryAddress = getDidRegistry(identity).didRegistry;
         require(isValidDelegateType(identity, delegateType), "DTNS");
         _validateDelegate(registryAddress, identity, delegateType, delegate);
     }
@@ -190,8 +240,8 @@ abstract contract IdentityHandler is IIdentityHandler, Context, EIP712 {
     function isValidDelegateType(
         address identity,
         bytes32 delegateType
-    ) public view returns (bool) {
-        return didDelegateTypes[identity][delegateType];
+    ) public view returns (bool isValid) {
+        isValid = didDelegateTypes[identity][delegateType].status;
     }
 
     function addDelegateType(bytes32 delegateType) external {
@@ -204,7 +254,7 @@ abstract contract IdentityHandler is IIdentityHandler, Context, EIP712 {
 
     function addDelegateTypeSigned(
         bytes32 delegateType,
-        bytes32 nonce,
+        uint64 nonce,
         uint8 sigV,
         bytes32 sigR,
         bytes32 sigS
@@ -217,8 +267,7 @@ abstract contract IdentityHandler is IIdentityHandler, Context, EIP712 {
         bytes32 structHash = keccak256(message);
         bytes32 completeHash = _hashTypedDataV4(structHash);
         address actor = ecrecover(completeHash, sigV, sigR, sigS);
-        _validateAndSetNonce(actor, nonce);
-        _addDelegateType(delegateType, actor);
+        _delegateTypeChangeWithNonce(delegateType, actor, true, nonce);
     }
 
     function removeDelegateType(bytes32 delegateType) external {
@@ -231,7 +280,7 @@ abstract contract IdentityHandler is IIdentityHandler, Context, EIP712 {
 
     function removeDelegateTypeSigned(
         bytes32 delegateType,
-        bytes32 nonce,
+        uint64 nonce,
         uint8 sigV,
         bytes32 sigR,
         bytes32 sigS
@@ -244,8 +293,7 @@ abstract contract IdentityHandler is IIdentityHandler, Context, EIP712 {
         bytes32 structHash = keccak256(message);
         bytes32 completeHash = _hashTypedDataV4(structHash);
         address actor = ecrecover(completeHash, sigV, sigR, sigS);
-        _validateAndSetNonce(actor, nonce);
-        _removeDelegateType(delegateType, actor);
+        _delegateTypeChangeWithNonce(delegateType, actor, false, nonce);
     }
 
     function _delegateTypeChange(
@@ -253,8 +301,52 @@ abstract contract IdentityHandler is IIdentityHandler, Context, EIP712 {
         address by,
         bool status
     ) private {
-        require(didDelegateTypes[_msgSender()][delegateType] != status, "DAA");
-        didDelegateTypes[_msgSender()][delegateType] = status;
+        DelegateTypeState storage _delegateType = didDelegateTypes[by][
+            delegateType
+        ];
+        uint64 nonce = _delegateType.nonce;
+        _delegateTypeChangeWithNonceAndData(
+            delegateType,
+            by,
+            status,
+            nonce,
+            _delegateType
+        );
+    }
+
+    function _delegateTypeChangeWithNonceAndData(
+        bytes32 delegateType,
+        address by,
+        bool status,
+        uint64 nonce,
+        DelegateTypeState storage _delegateType
+    ) private {
+        _validateNonce(nonce, _delegateType.nonce);
+        require(_delegateType.status != status, "DAA");
+        _delegateType.status = status;
+        _delegateType.nonce++;
         emit NewDelegateTypeChange(delegateType, by, status);
+    }
+
+    function _delegateTypeChangeWithNonce(
+        bytes32 delegateType,
+        address by,
+        bool status,
+        uint64 nonce
+    ) internal {
+        DelegateTypeState storage _delegateType = didDelegateTypes[by][
+            delegateType
+        ];
+        _delegateTypeChangeWithNonceAndData(
+            delegateType,
+            by,
+            status,
+            nonce,
+            _delegateType
+        );
+    }
+
+    function _validateNonce(uint64 nonceValue, uint64 expected) internal pure {
+        require(nonceValue == expected, "IN");
     }
 }

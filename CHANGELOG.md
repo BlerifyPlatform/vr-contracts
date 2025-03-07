@@ -1,5 +1,15 @@
 # Changelog
 
+### 0.1.1
+
+- Feat: Add nonce support for issuance, revoke and onHold signed method
+- Feat: Add incremental nonce for adding did registry operations
+- Feat: Add incremental nonce for adding delegate types by signed way
+- Feat: update by delegate
+- Feat: Update by delegate signed
+- Feat: Update by custom delegate signed
+- Refactor: Update addDidRegistry method to changeDidRegistry
+
 ### 0.1.0
 
 - Fix: Emit event when an entity removes its custom didRegistry

@@ -3,6 +3,9 @@
 ## Common Error Messages
 
 - IET -> Invalid Expiration Time
+- IN -> Invalid Nonce
+- NAR -> Nonce already used
+- IDR -> Invalid DID Registry
 
 ## Credential Registry
 
@@ -16,4 +19,3 @@
 - SCF -> Static Call Failed
 - IOHCS -> Invalid OnHold Change Status
 - RNIBE -> Registry not issued by entity
-- NAR -> Nonce already used
