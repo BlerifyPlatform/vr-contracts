@@ -737,6 +737,12 @@ describe(artifactName, function () {
         .to.emit(contractInstance, "NewUpdate")
         .withArgs(digest, organization.address, exp);
     });
+
+    it("Should update by signed way", async () => {
+      const organization = ethers.Wallet.createRandom();
+      await issueSigned(organization);
+      await updateSigned(organization);
+    });
   });
 });
 
@@ -1000,6 +1006,53 @@ async function issueSigned(
   expect(q.onHold).to.equal(false);
 }
 
+async function updateSigned(
+  organization: Wallet,
+  contractName = EIP712ContractName,
+  message = "some message",
+  delta = 3600 * 24 * 365,
+  chainId = network.config.chainId,
+  anySender = entity2
+) {
+  const Artifact = await ethers.getContractFactory(artifactName, anySender);
+  const contractInstance = Artifact.attach(verificationRegistryAddress);
+  const _digest = keccak256(toUtf8Bytes(message));
+  const digestDetails = await contractInstance.getDetails(
+    organization.address,
+    _digest
+  );
+  const nonce = digestDetails.nonce;
+  const { typeDataHash, digest, exp } = await getTypedDataHashForUpdate(
+    organization.address,
+    nonce,
+    contractName,
+    message,
+    delta,
+    chainId
+  );
+  // sign type data hash
+  const signingKey = organization._signingKey;
+  const { v, r, s } = signingKey().signDigest(typeDataHash);
+
+  // 3. Send Signed Transaction
+  const result = await contractInstance.updateSigned(
+    digest,
+    exp,
+    organization.address,
+    nonce,
+    v,
+    r,
+    s
+  );
+  await expect(result)
+    .to.emit(contractInstance, "NewUpdate")
+    .withArgs(digest, organization.address, exp);
+  const q = await contractInstance.getDetails(organization.address, digest);
+  expect(q.exp).to.equal(exp);
+  expect(q.onHold).to.equal(false);
+  expect(q.nonce).to.equal(nonce.add(1));
+}
+
 async function revokeSigned(
   organization: Wallet,
   contractName = EIP712ContractName,
@@ -1196,6 +1249,59 @@ async function getTypedDataHashForIssue(
   const encodedMessage = defaultAbiCoder.encode(
     ["bytes32", "bytes32", "uint256", "address"],
     [ISSUE_TYPEHASH, digest, exp, organizationAddress]
+  );
+  const structHash = keccak256(arrayify(encodedMessage)); // OK
+
+  // 2. EIP712
+  // 2.1 build domainSeparator
+  const TYPE_HASH = keccak256(
+    toUtf8Bytes(
+      "EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)"
+    )
+  );
+  const _hashedName = keccak256(toUtf8Bytes(contractName));
+  const _hashedVersion = keccak256(toUtf8Bytes(version));
+
+  const contractAddress = verificationRegistryAddress;
+  const eds = defaultAbiCoder.encode(
+    ["bytes32", "bytes32", "bytes32", "uint256", "address"],
+    [TYPE_HASH, _hashedName, _hashedVersion, chainId, contractAddress]
+  );
+  const domainSeparator = keccak256(eds); // OK
+
+  // 2.2 Build type data hash
+  // Inputs: structHash and domainSeparator
+  const typeData = ethers.utils.solidityPack(
+    ["bytes1", "bytes1", "bytes32", "bytes32"],
+    [0x19, 0x01, domainSeparator, structHash]
+  );
+  const typeDataHash = keccak256(typeData);
+  return { typeDataHash, exp, digest };
+}
+
+async function getTypedDataHashForUpdate(
+  organizationAddress: String,
+  nonce: number | BigNumber,
+  contractName = EIP712ContractName,
+  message = "some message",
+  delta = 3600 * 24 * 365,
+  chainId = network.config.chainId,
+  version = contractVersion
+): Promise<{ typeDataHash: string; digest: string; exp: number }> {
+  const UPDATE_TYPEHASH = keccak256(
+    toUtf8Bytes(
+      "Update(bytes32 digest,uint256 exp,address identity,uint64 nonce)"
+    )
+  );
+
+  // 0. Build digest
+  const digest = keccak256(toUtf8Bytes(message));
+
+  // 1. Build struct data hash
+  const exp = Math.floor(Date.now() / 1000) + delta;
+  const encodedMessage = defaultAbiCoder.encode(
+    ["bytes32", "bytes32", "uint256", "address", "uint64"],
+    [UPDATE_TYPEHASH, digest, exp, organizationAddress, nonce]
   );
   const structHash = keccak256(arrayify(encodedMessage)); // OK
 

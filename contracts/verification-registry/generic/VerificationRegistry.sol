@@ -34,6 +34,10 @@ contract VerificationRegistry is IVerificationRegistry, IdentityHandler {
         keccak256(
             "OnHoldByDelegateWithCustomType(bytes32 digest,address identity,bool onHoldStatus,uint64 nonce,bytes32 delegateType)"
         );
+    bytes32 private constant UPDATE_TYPEHASH =
+        keccak256(
+            "Update(bytes32 digest,uint256 exp,address identity,uint64 nonce)"
+        );
 
     function issue(bytes32 digest, uint256 exp, address identity) external {
         _validateController(
@@ -69,14 +73,67 @@ contract VerificationRegistry is IVerificationRegistry, IdentityHandler {
         _update(digest, exp, identity);
     }
 
+    function updateSigned(
+        bytes32 digest,
+        uint256 exp,
+        address identity,
+        uint64 nonce,
+        uint8 sigV,
+        bytes32 sigR,
+        bytes32 sigS
+    ) external {
+        bytes memory message = abi.encode(
+            UPDATE_TYPEHASH,
+            digest,
+            exp,
+            identity,
+            nonce
+        );
+        bytes32 structHash = keccak256(message);
+        bytes32 completeHash = _hashTypedDataV4(structHash);
+        address didRegistry = getDidRegistry(identity).didRegistry;
+        checkControllerSignature(
+            didRegistry,
+            identity,
+            sigV,
+            sigR,
+            sigS,
+            completeHash
+        );
+        _updateWithNonce(digest, exp, identity, nonce);
+    }
+
     function _update(bytes32 digest, uint256 exp, address by) private {
-        Detail memory detail = registers[digest][by];
+        Detail storage detail = registers[digest][by];
+        uint64 nonce = detail.nonce;
+        _updateWithNonceAndData(digest, exp, by, nonce, detail);
+    }
+
+    function _updateWithNonce(
+        bytes32 digest,
+        uint256 exp,
+        address by,
+        uint64 nonce
+    ) private {
+        Detail storage detail = registers[digest][by];
+        _updateWithNonceAndData(digest, exp, by, nonce, detail);
+    }
+
+    function _updateWithNonceAndData(
+        bytes32 digest,
+        uint256 exp,
+        address by,
+        uint64 nonce,
+        Detail storage detail
+    ) private {
+        _validateNonce(nonce, detail.nonce);
         require(!(detail.exp < block.timestamp && detail.exp != 0), "ER"); // not expiration check
         require(detail.iat > 0, "RNIBE"); // must be issued check
         if (exp != detail.exp) {
             // just skipping exp if zero, to save gas
             detail.exp = exp;
         }
+        detail.nonce++;
         emit NewUpdate(digest, by, exp);
     }
 
