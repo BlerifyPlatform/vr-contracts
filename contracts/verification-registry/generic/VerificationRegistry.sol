@@ -109,7 +109,7 @@ contract VerificationRegistry is IVerificationRegistry, IdentityHandler {
         uint64 nonce
     ) private {
         Detail storage detail = registers[digest][by];
-        require(detail.nonce == nonce, "IN");
+        _validateNonce(nonce, detail.nonce);
         _onHoldChangeCore(by, digest, onHoldStatus, detail);
     }
 

@@ -68,4 +68,9 @@ interface IIdentityHandler {
         address didRegistry;
         uint64 nonce;
     }
+
+    struct DelegateTypeState {
+        bool status;
+        uint64 nonce;
+    }
 }

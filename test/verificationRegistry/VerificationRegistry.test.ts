@@ -917,7 +917,11 @@ async function addCustomDidRegistry(
   );
   await expect(result)
     .to.emit(verificationRegistryOrg, "DidRegistryChange")
-    .withArgs(organization.address, customDidRegistryAddress, true);
+    .withArgs(
+      organization.address,
+      ethers.constants.AddressZero,
+      customDidRegistryAddress
+    );
 }
 
 async function revokeByDelegate(
@@ -1301,15 +1305,15 @@ async function getTypedDataHashForAddDidRegistry(
 
 async function getTypedDataHashForAddDelegateType(
   delegateType: string,
-  nonce: string
+  nonce: number | BigNumber
 ): Promise<{ typeDataHash: string }> {
   const ADD_DELEGATE_TYPEHASH = keccak256(
-    toUtf8Bytes("AddDelegateType(bytes32 delegateType,bytes32 nonce)")
+    toUtf8Bytes("AddDelegateType(bytes32 delegateType,uint64 nonce)")
   );
 
   // 1. Build struct data hash
   const encodedMessage = defaultAbiCoder.encode(
-    ["bytes32", "bytes32", "bytes32"],
+    ["bytes32", "bytes32", "uint64"],
     [ADD_DELEGATE_TYPEHASH, delegateType, nonce]
   );
 
@@ -1369,15 +1373,15 @@ async function getTypedDataHashForOnHoldWithCustomTypeOfDelegate_Type(
 
 async function getTypedDataHashForRemoveDelegateType(
   delegateType: string,
-  nonce: string
+  nonce: number | BigNumber
 ): Promise<{ typeDataHash: string }> {
   const REMOVE_DELEGATE_TYPEHASH = keccak256(
-    toUtf8Bytes("RemoveDelegateType(bytes32 delegateType,bytes32 nonce)")
+    toUtf8Bytes("RemoveDelegateType(bytes32 delegateType,uint64 nonce)")
   );
 
   // 1. Build struct data hash
   const encodedMessage = defaultAbiCoder.encode(
-    ["bytes32", "bytes32", "bytes32"],
+    ["bytes32", "bytes32", "uint64"],
     [REMOVE_DELEGATE_TYPEHASH, delegateType, nonce]
   );
 
@@ -1550,8 +1554,14 @@ async function addDelegateTypeSigned(
   customDelegateType: string,
   organization: Wallet
 ) {
-  const randonNonceSeed = randomUUID();
-  const nonce = keccak256(toUtf8Bytes(randonNonceSeed));
+  const anySender = entity3;
+  const Artifact = await ethers.getContractFactory(artifactName, anySender);
+  const contractInstance = Artifact.attach(verificationRegistryAddress);
+  const delegateTypeDetails = await contractInstance.didDelegateTypes(
+    organization.address,
+    customDelegateType
+  );
+  const nonce = delegateTypeDetails.nonce;
   const { typeDataHash } = await getTypedDataHashForAddDelegateType(
     customDelegateType,
     nonce
@@ -1560,10 +1570,6 @@ async function addDelegateTypeSigned(
   const signingKey = organization._signingKey;
   const { v, r, s } = signingKey().signDigest(typeDataHash);
   // 3. Send Signed Transaction
-  const anySender = entity3;
-  const Artifact = await ethers.getContractFactory(artifactName, anySender);
-  const contractInstance = Artifact.attach(verificationRegistryAddress);
-
   const result = await contractInstance.addDelegateTypeSigned(
     customDelegateType,
     nonce,
@@ -1583,8 +1589,15 @@ async function removeDelegateTypeSigned(
   customDelegateType: string,
   organization: Wallet
 ) {
-  const randonNonceSeed = randomUUID();
-  const nonce = keccak256(toUtf8Bytes(randonNonceSeed));
+  const anySender = entity3;
+  const Artifact = await ethers.getContractFactory(artifactName, anySender);
+  const contractInstance = Artifact.attach(verificationRegistryAddress);
+  const delegateTypeDetails = await contractInstance.didDelegateTypes(
+    organization.address,
+    customDelegateType
+  );
+  const nonce = delegateTypeDetails.nonce;
+
   const { typeDataHash } = await getTypedDataHashForRemoveDelegateType(
     customDelegateType,
     nonce
@@ -1593,10 +1606,6 @@ async function removeDelegateTypeSigned(
   const signingKey = organization._signingKey;
   const { v, r, s } = signingKey().signDigest(typeDataHash);
   // 3. Send Signed Transaction
-  const anySender = entity3;
-  const Artifact = await ethers.getContractFactory(artifactName, anySender);
-  const contractInstance = Artifact.attach(verificationRegistryAddress);
-
   const result = await contractInstance.removeDelegateTypeSigned(
     customDelegateType,
     nonce,
