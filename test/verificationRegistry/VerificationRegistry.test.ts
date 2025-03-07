@@ -158,13 +158,13 @@ describe(artifactName, function () {
       const { didRegistry } = await deployDidRegistry();
       const organization = ethers.Wallet.createRandom();
 
-      await addDidRegistrySigned(didRegistry.address, organization);
+      await changeDidRegistrySigned(didRegistry.address, organization);
     });
     it("Should fail when trying to send an already signed transaction", async () => {
       const { didRegistry } = await deployDidRegistry();
       const organization = ethers.Wallet.createRandom();
 
-      const { v, r, s, nonce } = await addDidRegistrySigned(
+      const { v, r, s, nonce } = await changeDidRegistrySigned(
         didRegistry.address,
         organization
       );
@@ -173,7 +173,7 @@ describe(artifactName, function () {
       const attacker = entity2;
       const Artifact = await ethers.getContractFactory(artifactName, attacker);
       const contractInstance = Artifact.attach(verificationRegistryAddress);
-      const action = contractInstance.addDidRegistrySigned(
+      const action = contractInstance.changeDidRegistrySigned(
         didRegistry.address,
         nonce,
         v,
@@ -186,14 +186,14 @@ describe(artifactName, function () {
       const { didRegistry } = await deployDidRegistry();
       const organization = ethers.Wallet.createRandom();
 
-      const { nonce } = await addDidRegistrySigned(
+      const { nonce } = await changeDidRegistrySigned(
         didRegistry.address,
         organization
       );
 
       // re send
       const newNonce = nonce.add(1);
-      const { typeDataHash } = await getTypedDataHashForAddDidRegistry(
+      const { typeDataHash } = await getTypedDataHashForChangeDidRegistry(
         didRegistry.address,
         newNonce
       );
@@ -204,7 +204,7 @@ describe(artifactName, function () {
       const attacker = entity2;
       const Artifact = await ethers.getContractFactory(artifactName, attacker);
       const contractInstance = Artifact.attach(verificationRegistryAddress);
-      const action = contractInstance.addDidRegistrySigned(
+      const action = contractInstance.changeDidRegistrySigned(
         didRegistry.address,
         newNonce,
         newSignature.v,
@@ -220,7 +220,7 @@ describe(artifactName, function () {
     it("Shoud remove a DIDRegistry by signed way", async () => {
       const { didRegistry } = await deployDidRegistry();
       const organization = ethers.Wallet.createRandom();
-      await addDidRegistrySigned(didRegistry.address, organization);
+      await changeDidRegistrySigned(didRegistry.address, organization);
       await removeDidRegistrySigned(organization);
     });
     it("Shoud fail to add a deletegate type by signed way when unauthorized", async () => {
@@ -1006,7 +1006,7 @@ async function addCustomDidRegistry(
 ) {
   const Artifact = await ethers.getContractFactory(artifactName, organization);
   const verificationRegistryOrg = Artifact.attach(_verificationRegistryAddress);
-  const result = await verificationRegistryOrg.addDidRegistry(
+  const result = await verificationRegistryOrg.changeDidRegistry(
     customDidRegistryAddress
   );
   await expect(result)
@@ -1449,7 +1449,7 @@ async function getTypedDataHashForRevocation(
   return { typeDataHash, digest };
 }
 
-async function getTypedDataHashForAddDidRegistry(
+async function getTypedDataHashForChangeDidRegistry(
   didRegistryAddressCandidate: string,
   nonce: number | BigNumber,
   contractName = EIP712ContractName,
@@ -1457,7 +1457,7 @@ async function getTypedDataHashForAddDidRegistry(
   version = contractVersion
 ): Promise<{ typeDataHash: string }> {
   const ADD_DID_REGISTRY_TYPEHASH = keccak256(
-    toUtf8Bytes("AddDidRegistry(address didRegistryAddress,uint64 nonce)")
+    toUtf8Bytes("ChangeDidRegistry(address didRegistryAddress,uint64 nonce)")
   );
 
   // 0. Build digest
@@ -1708,7 +1708,7 @@ async function getDomainSeparator(
   return domainSeparator;
 }
 
-async function addDidRegistrySigned(
+async function changeDidRegistrySigned(
   didRegistryAddress: string,
   organization: Wallet
 ) {
@@ -1723,7 +1723,7 @@ async function addDidRegistrySigned(
   ).didRegistry;
 
   let nonce = didRegistryDetails.nonce;
-  const { typeDataHash } = await getTypedDataHashForAddDidRegistry(
+  const { typeDataHash } = await getTypedDataHashForChangeDidRegistry(
     didRegistryAddress,
     nonce
   );
@@ -1731,7 +1731,7 @@ async function addDidRegistrySigned(
   const signingKey = organization._signingKey;
   const { v, r, s } = signingKey().signDigest(typeDataHash);
   // 3. Send Signed Transaction
-  const result = await contractInstance.addDidRegistrySigned(
+  const result = await contractInstance.changeDidRegistrySigned(
     didRegistryAddress,
     nonce,
     v,

@@ -8,11 +8,11 @@ pragma solidity 0.8.18;
  */
 interface IIdentityHandler {
     /**
-     * @dev Every entity is able to just add one didRegistry (address).
+     * @dev Every entity is able to just add one didRegistry (address) or update it.
      * Main identity is the only that that can add a didRegistry only valid for him
      * By adding a didRegistry tied to a entity the verification about delegates goes always through that contract
      */
-    function addDidRegistry(address didRegistryAddress) external;
+    function changeDidRegistry(address didRegistryAddress) external;
 
     /**
      * @dev removes the custom didRegistry if exists otherwise reverts

@@ -13,7 +13,7 @@ abstract contract IdentityHandler is IIdentityHandler, Context, EIP712 {
     mapping(address => mapping(bytes32 => DelegateTypeState))
         public didDelegateTypes;
     bytes32 private constant ADD_DID_REGISTRY_TYPEHASH =
-        keccak256("AddDidRegistry(address didRegistryAddress,uint64 nonce)");
+        keccak256("ChangeDidRegistry(address didRegistryAddress,uint64 nonce)");
 
     bytes32 private constant REMOVE_DID_REGISTRY_TYPEHASH =
         keccak256("RemoveDidRegistry(uint64 nonce)");
@@ -80,17 +80,17 @@ abstract contract IdentityHandler is IIdentityHandler, Context, EIP712 {
         }
     }
 
-    function addDidRegistry(address didRegistryAddress) external {
-        _addDidRegistry(didRegistryAddress, _msgSender());
+    function changeDidRegistry(address didRegistryAddress) external {
+        _changeDidRegistry(didRegistryAddress, _msgSender());
     }
 
-    function _addDidRegistryWithNonce(
+    function _changeDidRegistryWithNonce(
         address didRegistryAddress,
         address actor,
         uint64 nonce
     ) internal {
         DidRegistryDetails storage details = didRegistries[actor];
-        _addDidRegistryWithNonceAndData(
+        _changeDidRegistryWithNonceAndData(
             didRegistryAddress,
             actor,
             nonce,
@@ -98,7 +98,7 @@ abstract contract IdentityHandler is IIdentityHandler, Context, EIP712 {
         );
     }
 
-    function _addDidRegistryWithNonceAndData(
+    function _changeDidRegistryWithNonceAndData(
         address didRegistryAddress,
         address actor,
         uint64 nonce,
@@ -117,13 +117,13 @@ abstract contract IdentityHandler is IIdentityHandler, Context, EIP712 {
         emit DidRegistryChange(actor, oldDidRegistry, didRegistryAddress);
     }
 
-    function _addDidRegistry(
+    function _changeDidRegistry(
         address didRegistryAddress,
         address actor
     ) internal {
         DidRegistryDetails storage details = didRegistries[actor];
         uint64 nonce = details.nonce;
-        _addDidRegistryWithNonceAndData(
+        _changeDidRegistryWithNonceAndData(
             didRegistryAddress,
             actor,
             nonce,
@@ -131,7 +131,7 @@ abstract contract IdentityHandler is IIdentityHandler, Context, EIP712 {
         );
     }
 
-    function addDidRegistrySigned(
+    function changeDidRegistrySigned(
         address didRegistryAddress,
         uint64 nonce,
         uint8 sigV,
@@ -146,7 +146,7 @@ abstract contract IdentityHandler is IIdentityHandler, Context, EIP712 {
         bytes32 structHash = keccak256(message);
         bytes32 completeHash = _hashTypedDataV4(structHash);
         address actor = ecrecover(completeHash, sigV, sigR, sigS);
-        _addDidRegistryWithNonce(didRegistryAddress, actor, nonce);
+        _changeDidRegistryWithNonce(didRegistryAddress, actor, nonce);
     }
 
     function removeDidRegistry() external {
