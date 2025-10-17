@@ -2,6 +2,10 @@
 
 ## Generic networks
 
+```sh
+ yarn hardhat run scripts/generic/deployVerificationRegistry.ts --network blerifyAvalancheTestnet
+```
+
 ### Deploying available contracts:
 
 ```sh
